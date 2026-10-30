@@ -1,0 +1,5 @@
+# Every file is checked out byte for byte as built: PC Guardian checks
+# dashboard/server.mjs by SHA-256 and the pages' inline scripts by CSP hash,
+# so line endings must never be converted (core.autocrlf is on by default in
+# Git for Windows).
+* -text

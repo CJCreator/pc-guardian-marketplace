@@ -1,0 +1,50 @@
+PC Guardian AI
+Copyright (c) 2026 Techgramam. All rights reserved.
+
+PROPRIETARY SOFTWARE LICENSE
+
+This software, including its source code, scripts, documentation and any
+build output (the "Software"), is proprietary to Techgramam and is licensed,
+not sold.
+
+1. Permitted use. Techgramam's employees and contractors, and members of an
+   organization to which Techgramam has made the Software available (for
+   example, through that organization's Claude Code plugin library), may
+   install and use the Software for that organization's internal purposes.
+
+2. Restrictions. Except as Techgramam permits in writing, you may not:
+   (a) copy the Software, except as needed to install and use it under
+       section 1 and to make backups;
+   (b) modify, adapt or create derivative works of the Software;
+   (c) distribute, publish, sublicense, sell, rent, lend or otherwise make
+       the Software available to anyone outside the permitted organization;
+   (d) reverse engineer, decompile or disassemble the Software, except to
+       the extent applicable law expressly permits it despite this
+       restriction; or
+   (e) remove or alter any copyright, license or proprietary notice.
+
+3. Third-party components. The Software includes third-party open-source
+   components that are licensed under their own terms, listed in
+   THIRD_PARTY_NOTICES.md. Nothing in this license limits your rights under
+   those terms.
+
+4. Ownership. Techgramam retains all right, title and interest in the
+   Software. No rights are granted except as expressly stated here.
+
+5. No warranty. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY
+   KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT.
+   The Software reports on a computer's condition and suggests manual steps;
+   it changes the computer only through cleanup that you turn on, select and
+   confirm. Any action you take on its findings, and any cleanup you
+   confirm, is your own decision and at your own risk.
+
+6. Limitation of liability. TO THE MAXIMUM EXTENT PERMITTED BY LAW, IN NO
+   EVENT SHALL TECHGRAMAM BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR ITS USE.
+
+7. Termination. This license ends automatically if you breach it. On
+   termination you must stop using the Software and delete all copies.
+
+For permission beyond these terms, contact Techgramam.

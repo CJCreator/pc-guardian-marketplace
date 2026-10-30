@@ -1,0 +1,3 @@
+# The bundled Node.js runtime (94 MB) is not in this repository (decisions #35):
+# installs from here run the browser dashboard on Node.js 22+ from PATH.
+runtime/node.exe

@@ -1,0 +1,31 @@
+1:"$Sreact.fragment"
+2:"/_next/static/chunks/0qfn020dxr8ut.js"
+3:"/_next/static/chunks/05i9kur09l2v9.js"
+4:"/_next/static/chunks/2wevck9uz9w8u.js"
+5:"/_next/static/chunks/16pbixueyuqrp.js"
+6:"/_next/static/chunks/3j5gxl6gh1xxw.js"
+7:I[14976,["$2","$3","$4","$5","$6"],"AppShell"]
+8:I[40957,["$2","$3","$4","$5","$6"],"default"]
+9:"/_next/static/chunks/22mcyxml3mz78.js"
+a:I[33537,["$2","$3","$4","$5","$6","$9"],"default"]
+b:I[80386,["$2","$3","$4","$5","$6"],"default"]
+c:I[64786,["$2","$3","$4","$5","$6"],""]
+10:"/_next/static/chunks/1-s40qgcw8ddr.js"
+11:I[99177,["$2","$3","$4","$5","$6","$10"],"StoragePage"]
+12:I[31210,["$2","$3","$4","$5","$6"],"OutletBoundary"]
+13:"$Sreact.suspense"
+15:"ViewportBoundary"
+16:I[31210,["$2","$3","$4","$5","$6"],"$15"]
+18:"MetadataBoundary"
+19:I[31210,["$2","$3","$4","$5","$6"],"$18"]
+1b:I[21964,["$2","$3","$4","$5","$6"],"default",1]
+:HL["/_next/static/chunks/1j-voq4xtd_fd.css","style"]
+e:X
+f:[["children",{"s":"__PAGE__","h":512,"d":{"r":["$","$1","c",{"children":[["$","$L11",null,{}],[["$","script","script-0",{"src":"/_next/static/chunks/1-s40qgcw8ddr.js","async":true,"nonce":"$undefined"}]],["$","$L12",null,{"children":["$","$13",null,{"name":"Next.MetadataOutlet","children":"$@14"}]}]]}],"p":false,"v":null}}]]
+d:[["children",{"s":"storage","h":512,"d":{"r":["$","$1","c",{"children":[null,["$","$L8",null,{"parallelRouterKey":"children","error":"$undefined","errorStyles":"$undefined","errorScripts":"$undefined","template":["$","$Lb",null,{}],"templateStyles":"$undefined","templateScripts":"$undefined","notFound":"$undefined","forbidden":"$undefined","unauthorized":"$undefined"}]]}],"p":false,"v":"$e"},"c":"$Qf"}]]
+0:{"P":null,"c":["","storage",""],"q":"","i":false,"t":{"t":{"s":"","h":528,"d":{"r":["$","$1","c",{"children":[[["$","link","0",{"rel":"stylesheet","href":"/_next/static/chunks/1j-voq4xtd_fd.css","precedence":"next","crossOrigin":"$undefined","nonce":"$undefined"}],["$","script","script-0",{"src":"/_next/static/chunks/0qfn020dxr8ut.js","async":true,"nonce":"$undefined"}],["$","script","script-1",{"src":"/_next/static/chunks/05i9kur09l2v9.js","async":true,"nonce":"$undefined"}],["$","script","script-2",{"src":"/_next/static/chunks/2wevck9uz9w8u.js","async":true,"nonce":"$undefined"}],["$","script","script-3",{"src":"/_next/static/chunks/16pbixueyuqrp.js","async":true,"nonce":"$undefined"}],["$","script","script-4",{"src":"/_next/static/chunks/3j5gxl6gh1xxw.js","async":true,"nonce":"$undefined"}]],["$","html",null,{"lang":"en","data-theme":"dark","suppressHydrationWarning":true,"children":[["$","head",null,{"children":["$","script",null,{"dangerouslySetInnerHTML":{"__html":"try{var p=JSON.parse(localStorage.getItem('pcg-prefs')||'{}'),r=document.documentElement,m=function(q){return window.matchMedia(q).matches},t=p.theme==='light'||p.theme==='contrast'||p.theme==='dark'?p.theme:p.theme==='system'?(m('(prefers-contrast: more)')?'contrast':m('(prefers-color-scheme: light)')?'light':'dark'):'dark';r.dataset.theme=t;r.dataset.motion=p.motion==='reduce'||p.motion==='full'?p.motion:'system';r.dataset.transparency=p.transparency==='reduce'?'reduce':'system'}catch(e){}"}}]}],["$","body",null,{"className":"antialiased","children":["$","$L7",null,{"children":["$","$L8",null,{"parallelRouterKey":"children","error":"$undefined","errorStyles":"$undefined","errorScripts":"$undefined","template":["$","$La",null,{"children":["$","$Lb",null,{}]}],"templateStyles":[],"templateScripts":[["$","script","script-0",{"src":"/_next/static/chunks/22mcyxml3mz78.js","async":true,"nonce":"$undefined"}]],"notFound":[["$","div",null,{"className":"glass flex flex-col items-start gap-3 rounded-2xl p-8","children":[["$","h1",null,{"className":"font-display text-2xl font-semibold","children":"Page not found"}],["$","p",null,{"className":"text-muted","children":"There is no dashboard page at this address."}],["$","$Lc",null,{"href":"/","className":"inline-flex min-h-11 items-center font-semibold text-accent-fg hover:underline","children":"Back to the dashboard"}]]}],[]],"forbidden":"$undefined","unauthorized":"$undefined"}]}]}]]}]]}],"p":false,"v":null},"c":"$Qd"},"h":{"r":["$","$1","h",{"children":[null,["$","$L16",null,{"children":"$L17"}],["$","$L19",null,{"children":[["$","div",null,{"hidden":true,"children":["$","$13",null,{"name":"Next.Metadata","children":"$L1a"}]}],null]}],null]}],"p":false,"v":null}},"m":"$undefined","G":["$1b",[["$","link","0",{"rel":"stylesheet","href":"/_next/static/chunks/1j-voq4xtd_fd.css","precedence":"next","crossOrigin":"$undefined","nonce":"$undefined"}]]],"S":true,"r":"$undefined","s":"$undefined","a":"$undefined","l":"$undefined","p":"$undefined","d":"$undefined","b":"5oz-SiTIBjTPe8xTLXD5C"}
+e:C
+17:[["$","meta","0",{"charSet":"utf-8"}],["$","meta","1",{"name":"viewport","content":"width=device-width, initial-scale=1"}],["$","meta","2",{"name":"color-scheme","content":"dark light"}]]
+1c:I[5320,["$2","$3","$4","$5","$6"],"IconMark"]
+14:null
+1a:[["$","title","0",{"children":"Storage · PC Guardian"}],["$","meta","1",{"name":"description","content":"A read-only health check of this Windows PC. PC Guardian never changes anything."}],["$","meta","2",{"name":"robots","content":"noindex, nofollow"}],["$","link","3",{"rel":"icon","href":"/icon.svg?icon.34yo79tpdcy5f.svg","sizes":"any","type":"image/svg+xml"}],["$","$L1c","4",{}]]

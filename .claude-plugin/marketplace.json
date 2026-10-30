@@ -1,0 +1,15 @@
+{
+  "name": "techgramam",
+  "owner": {
+    "name": "Techgramam"
+  },
+  "description": "Claude Code plugins from Techgramam.",
+  "plugins": [
+    {
+      "name": "pc-guardian",
+      "source": "./",
+      "description": "Windows PC health audit: performance, startup, storage, browser, security and stability. Scans only read; it changes your PC only through cleanup you turn on, tick and confirm.",
+      "version": "2.0.0"
+    }
+  ]
+}
