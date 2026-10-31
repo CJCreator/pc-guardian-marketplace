@@ -4,9 +4,13 @@
 
 import { CATEGORY_LABEL, CLASS_LABEL, THRESHOLDS, type Classified } from './classify.ts'
 import { ageDays, dateText, percentText, sizeText } from './format.ts'
+import { DEV_CACHES } from './devcaches.ts'
 import { protectedBy } from './paths.ts'
 import type {
   ClassifyContext,
+  RawDevCaches,
+  RawHash,
+  RawVerify,
   Finding,
   FindingClass,
   RawVolume,
@@ -40,6 +44,8 @@ export type ReportInput = {
   volume: RawVolume | null
   walk: RawWalk | null
   windows: RawWindows | null
+  devcaches?: RawDevCaches | null
+  hash?: RawHash | null
   classified: Classified
   recommendations: Recommendation[]
   ctx: ClassifyContext
@@ -53,6 +59,8 @@ export function buildReports(input: ReportInput): ReportFile[] {
     { name: 'largest_files.csv', text: largestFiles(input) },
     { name: 'installers_and_archives.csv', text: installersAndArchives(input) },
     { name: 'cleanup_recommendations.md', text: cleanupRecommendations(input) },
+    { name: 'cache_analysis.md', text: cacheAnalysis(input) },
+    { name: 'duplicate_files.csv', text: duplicateFiles(input) },
   ]
 }
 
@@ -264,5 +272,120 @@ function cleanupRecommendations({ meta, classified, recommendations }: ReportInp
     rec.steps.forEach((s, i) => out.push(`${String(i + 1)}. ${s}`))
     out.push('', `Risk: ${rec.risk} Undo: ${rec.undo}`, '')
   }
+  return out.join('\n')
+}
+
+function cacheAnalysis({ meta, devcaches, classified }: ReportInput): string {
+  const out: string[] = ['# Cache analysis', '', `Scan ${meta.scanId}, ${meta.createdAt}.`, '']
+  out.push('## Developer tool caches', '')
+  if (devcaches === null || devcaches === undefined) {
+    out.push('Not checked in this scan.', '')
+  } else {
+    out.push('| Cache | Tool | Size | Files | Last written | Tool running | Class | How it is cleaned |', '| --- | --- | ---: | ---: | --- | --- | --- | --- |')
+    for (const spec of DEV_CACHES) {
+      const c = devcaches.caches.find(x => x.id === spec.id)
+      if (c === undefined || !c.isPresent) continue
+      out.push(
+        `| ${md(spec.label)} | ${md(spec.tool)} | ${sizeText(c.bytes)}${c.isTruncated ? ' (partial)' : ''} | ${c.fileCount.toLocaleString('en-US')} | ${dateText(c.lastWriteUtc)} | ${c.isRunning ? 'yes' : 'no'} | ${spec.cls === 'safe' ? 'A. Safe' : 'B. Manual'} | ${md(spec.how)} |`,
+      )
+    }
+    const absent = DEV_CACHES.filter(spec => !devcaches.caches.some(c => c.id === spec.id && c.isPresent)).map(s => s.label)
+    if (absent.length > 0) out.push('', `Not present on this PC: ${absent.join(', ')}.`)
+    out.push('')
+  }
+  out.push('## Build caches inside projects', '')
+  const builds = classified.findings.filter(f => f.category === 'build_cache')
+  if (builds.length === 0) out.push('None found.', '')
+  else {
+    out.push('| Folder | Size | Last written |', '| --- | ---: | --- |')
+    for (const f of builds.slice(0, 200)) out.push(`| ${md(f.path)} | ${sizeText(f.bytes)} | ${dateText(f.modifiedUtc)} |`)
+    out.push('', 'Only these folders are ever offered; node_modules, lock files, sources and .git never are.', '')
+  }
+  out.push('Drive Cleanup never uninstalls tools and never runs their commands; manual steps are for you to run.', '')
+  return out.join('\n')
+}
+
+function duplicateFiles({ hash, classified, ctx }: ReportInput): string {
+  const rows = classified.findings
+    .filter(f => f.duplicate !== undefined)
+    .sort((a, b) => (a.duplicate?.groupId ?? '').localeCompare(b.duplicate?.groupId ?? '') || Number(b.duplicate?.isSuggestedKeeper) - Number(a.duplicate?.isSuggestedKeeper))
+    .map(f => [
+      f.duplicate?.groupId ?? '',
+      f.category === 'duplicate_folder' || (f.isFolder && f.category === 'protected') ? 'folder' : 'file',
+      f.duplicate?.sha256 ?? '',
+      f.bytes,
+      sizeText(f.bytes),
+      extensionText(f.path),
+      f.path,
+      dateText(f.modifiedUtc),
+      ctx.lastAccessTrusted ? dateText(f.accessedUtc) : 'not recorded',
+      f.duplicate?.isSuggestedKeeper === true ? 'yes' : 'no',
+      f.duplicate?.keeperReason ?? '',
+      f.protectedBy,
+    ])
+  const header = ['group_id', 'kind', 'sha256', 'size_bytes', 'size', 'extension', 'path', 'modified', 'accessed', 'is_suggested_keeper', 'keeper_reason', 'protected_by']
+  if (hash === null || hash === undefined) {
+    return csv(header, [['', '', '', '', '', '', 'Duplicate search was off or did not run in this scan.', '', '', '', '', '']])
+  }
+  return csv(header, rows)
+}
+
+const extensionText = (path: string): string => {
+  const name = path.slice(Math.max(path.lastIndexOf('\\'), path.lastIndexOf('/')) + 1)
+  const dot = name.lastIndexOf('.')
+  return dot <= 0 ? '' : name.slice(dot).toLowerCase()
+}
+
+export type Verification = {
+  at: string
+  scanId: string | null
+  freeBeforeBytes: number | null
+  freeAfterBytes: number | null
+  reportedFreedBytes: number
+  quarantinedOnSystemDriveBytes: number
+  verify: RawVerify | null
+  verifyDetail: string | null
+  runs: { runId: string; kind: string; startedAt: string; summary: string }[]
+}
+
+export function finalReport(v: Verification): string {
+  const out: string[] = ['# Final cleanup report', '', `Verified ${v.at}${v.scanId === null ? '' : `, after scan ${v.scanId}`}. Read-only: verifying changed nothing.`, '']
+  out.push('## Space', '')
+  if (v.freeBeforeBytes !== null && v.freeAfterBytes !== null) {
+    out.push(`- Free on the system drive at the scan: ${sizeText(v.freeBeforeBytes)}`)
+    out.push(`- Free now: ${sizeText(v.freeAfterBytes)}`)
+    out.push(`- Difference: ${sizeText(Math.max(0, v.freeAfterBytes - v.freeBeforeBytes))}${v.freeAfterBytes < v.freeBeforeBytes ? ' (less than at the scan: other programs wrote meanwhile)' : ''}`)
+  } else {
+    out.push('- Free space before or after: not checked.')
+  }
+  out.push(`- What the cleanups reported: ${sizeText(v.reportedFreedBytes)} deleted or moved.`)
+  if (v.quarantinedOnSystemDriveBytes > 0) {
+    out.push(`- ${sizeText(v.quarantinedOnSystemDriveBytes)} is quarantined on the system drive itself: it frees space there only once that quarantine is deleted for good.`)
+  }
+  out.push('', 'The two figures differ when other programs write to the drive, or when quarantine is on the same drive.', '')
+  out.push('## Cleanups since the scan', '')
+  if (v.runs.length === 0) out.push('None.')
+  for (const r of v.runs) out.push(`- ${r.startedAt.slice(0, 16).replace('T', ' ')} ${r.kind}: ${r.summary}`)
+  out.push('')
+  out.push('## Checks', '')
+  if (v.verify === null) {
+    out.push(`Not checked: ${v.verifyDetail ?? 'the check did not run'}.`, '')
+  } else {
+    out.push('### Developer tools', '', '| Tool | Status | Version |', '| --- | --- | --- |')
+    for (const t of v.verify.tools) out.push(`| ${t.id} | ${t.status === 'ok' ? 'found' : t.status === 'not_found' ? 'not on PATH' : 'could not be read'} | ${md(t.version)} |`)
+    const missing = v.verify.projects.filter(p => !p.exists || !p.hasGit)
+    out.push('', '### Projects', '', `${String(v.verify.projects.length)} projects from the scan checked; ${String(missing.length)} missing or without .git.`)
+    for (const p of missing.slice(0, 50)) out.push(`- ${p.path}: ${p.exists ? 'no .git folder (may never have had one)' : 'missing'}`)
+    out.push('', '### Quarantine', '')
+    if (v.verify.quarantine.length === 0) out.push('No active quarantine.')
+    for (const q of v.verify.quarantine) {
+      out.push(`- Run ${q.runId}: ${String(q.matched)} of ${String(q.checked)} items intact${q.missing > 0 ? `, ${String(q.missing)} missing` : ''}${q.mismatched > 0 ? `, **${String(q.mismatched)} changed**` : ''}.`)
+    }
+    out.push('', '### Windows integrity', '')
+    out.push(
+      'Not checked by Drive Cleanup: it never touches Windows files, and a full check takes a long time and needs administrator rights. To check yourself, in an administrator terminal: `sfc /verifyonly` (or `sfc /scannow` to repair).',
+    )
+  }
+  out.push('')
   return out.join('\n')
 }

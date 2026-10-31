@@ -3,7 +3,7 @@
 | | |
 | --- | --- |
 | Plugin | `drive-cleanup` (marketplace `techgramam`) |
-| Status | **M1 built, not yet run on Windows.** 0.2.0-beta.1 holds the read-only deep audit; see §13 for what remains before 0.2.0. |
+| Status | **M1–M6 built, not yet run on Windows.** 1.0.0-beta.1; see §13 for what remains and §18 for where the build differs from this plan. |
 | First usable release | 0.2.0 (milestone M1: read-only deep audit and reports) |
 | Feature-complete release | 1.0.0 (M1 to M6) |
 | Platform | Windows 10 and 11, 64-bit, Claude Code 2.1.312 or later, no administrator rights needed |
@@ -131,7 +131,8 @@ junction into a protected folder is still protected.
 
 **Development projects.** A *project root* is a folder that contains any of `.git`, `package.json`,
 `pyproject.toml`, `requirements.txt`, `setup.py`, `*.sln`, `*.csproj`, `go.mod`, `Cargo.toml`, `pom.xml`,
-`build.gradle`, `build.gradle.kts`, `composer.json`, `Gemfile`, `.vscode` or `.idea`. Everything under a
+`build.gradle`, `build.gradle.kts`, `composer.json` or `Gemfile`. *(As built: not `.vscode` or `.idea`, which
+many profiles hold at their root; and the profile root and top-level folders are never projects.)* Everything under a
 project root is protected **except** the build caches named in §5 (`.next\cache`, `node_modules\.vite`,
 `.turbo`, `.parcel-cache`, `__pycache__`, `.pytest_cache`), and those are only ever class B. `node_modules`,
 lock files, source, `.git` and configuration are never offered.
@@ -666,46 +667,52 @@ Estimates are engineer-days for one engineer familiar with the PC Guardian codeb
   files in under 4 min; a Process Monitor capture shows no writes outside the data folder and no reads of
   contents; junction, placeholder and long-path fixtures pass. Then release 0.2.0.
 
-### M2: Developer caches and leftovers (0.3.0), about 6 days
+### M2: Developer caches and leftovers, built
 
-- [ ] `scan/dev-caches.ps1`, `scan/leftovers.ps1`; categories `dev_cache_*`, `leftover`.
-- [ ] `cache_analysis.md`; tool `get_dev_caches`; skill `dev-caches`.
-- [ ] Each cache location confirmed on a real install of its tool (D5 for Antigravity).
-- **Exit:** for every tool, the location is found when installed, absent when not, and the running state is
-  right.
+- [x] `scan/dev-caches.ps1` (17 caches at fixed locations, with the owning tool's running state),
+      `scan/leftovers.ps1` (uninstall entries and Store packages vs app-data folders); categories
+      `dev_cache_safe`, `dev_cache_review`, `leftover`, and `build_cache` from the walk.
+- [x] `cache_analysis.md`; tool `get_dev_caches`; skill `dev-caches`.
+- [x] A test checks the cache ids agree across `devcaches.ts`, `dev-caches.ps1` and `clean-cache.ps1`.
+- [ ] **Open:** every location confirmed on a real install of its tool (D5 for Antigravity).
 
-### M3: Duplicates (0.4.0), about 7 days
+### M3: Duplicates, built
 
-- [ ] `scan/hash.ps1` with quick hash, full hash, resume and the hash cache.
-- [ ] Grouping, keeper rule, folder duplicates; `duplicate_files.csv`; tool `get_duplicate_groups`;
-      skill `duplicates`; the setting and its wording.
-- **Exit:** hashes equal `Get-FileHash -Algorithm SHA256` on fixtures; a cancelled run resumes; placeholders
-  are never hydrated (OneDrive fixture); a locked file is skipped, not failed.
+- [x] `scan/hash.ps1` (opt-in): size buckets, quick hash of the first and last 64 KiB, full SHA-256,
+      largest first, 8-minute budget, resume from where it stopped ("Continue duplicate search").
+- [x] Keeper rule (§5.4), folder duplicates from file hashes (nested ones reported once, at the top),
+      `duplicate_files.csv`, tool `get_duplicate_groups`, skill `duplicates`, the setting and its wording.
+- [ ] **Open:** hashes compared with `Get-FileHash` on a real PC; OneDrive placeholders confirmed not
+      hydrated (TESTING.md §5).
 
-### M4: Approval, cleanup and quarantine (0.5.0), about 12 days
+### M4: Approval, cleanup and quarantine, built
 
-- [ ] Browser dashboard: Overview, Findings, Duplicates, Dev caches, Windows, Review, Quarantine, Reports,
-      Settings, What we read.
-- [ ] `cleanup.ts` with the request gate (S5), approved lists, run log, manifest.
-- [ ] Actions: `quarantine-move`, `delete-safe`, `clean-cache`, `quarantine-restore`, `quarantine-purge`,
-      each with its guard and hash; ESLint rule that only `cleanup.ts` calls `runAction`.
-- [ ] Space check, quarantine location choice, `restore.json`, README in the quarantine root.
-- **Exit:** move and restore give byte-identical files (hash) on the same drive and across drives; every
-  §2.2 rule refuses in every action; changed-since-scan, in-use and junction-swap items are skipped;
-  refused in a `-p` session, with cleanup off, with a stale list, while scanning.
+- [x] Approval in the **pane** (§18): Review by category or item, Quarantine (Restore, Delete for
+      good), Settings (cleanup, duplicate search, quarantine drive).
+- [x] `hooks/core/plan.ts`: the request gate, unit-tested rule by rule; `hooks/cleanup.ts`, the only
+      caller of `runAction`; run log, per-run records and `deletion_manifest.csv`.
+- [x] Actions: `apply.ps1` (delete class A, quarantine class B, with its own protected-path guard and
+      re-checks), `clean-cache.ps1`, `restore.ps1`, `purge.ps1`; each hash-checked, inputs by strict
+      pattern.
+- [x] Space check and quarantine drive choice; `restore.json` in every quarantine run.
+- [ ] **Open:** move and restore round-trips on a real PC, same drive and across drives
+      (TESTING.md §3).
 
-### M5: Verification (0.6.0), about 4 days
+### M5: Verification, built
 
-- [ ] Verify step, `final_cleanup_report.md`, `get_quarantine` tool, `review` skill.
-- **Exit:** not-elevated checks report Not checked; no command that changes state runs.
+- [x] `scan/verify.ps1` (tool versions from file version information, projects, quarantine integrity
+      by SHA-256), Verify in the pane, tool `verify_cleanup`, skills `verify` and `review`,
+      `final_cleanup_report.md`.
+- [x] Windows integrity: reported with the manual `sfc` command, not run (§18).
 
-### M6: Hardening and 1.0.0, about 6 days
+### M6: Hardening and 1.0.0
 
-- [ ] Accessibility pass, performance pass (3 M files), docs (README, What we read, CHANGELOG),
-      THIRD_PARTY_NOTICES, release checklist, security review of the action scripts by a second engineer.
-- [ ] Beta on five machines with different profiles: developer, media-heavy, OneDrive-heavy, a small 128 GB
-      drive, a non-English Windows.
-- **Exit:** no data-loss bug open; every S-rule has a passing test; release checklist signed off.
+- [x] 87 unit tests and 8 engine tests; type-checked against the engine's declarations; plugin and
+      marketplace validate.
+- [x] README, CHANGELOG, `TESTING.md` (the Windows test plan, from read-only to destructive).
+- [ ] **Open:** TESTING.md passed on five machines (developer, media-heavy, OneDrive-heavy, a small
+      drive, non-English Windows); recorded fixtures replace the hand-made ones; a second engineer's
+      review of `ps/actions/`; accessibility pass of the pane. Then 1.0.0.
 
 Total: about 50 engineer-days.
 
@@ -764,3 +771,20 @@ Total: about 50 engineer-days.
 | D5 | Antigravity cache paths | Confirm on a real install before M2 ships |
 | D6 | Plugin name: `drive-cleanup` | Keep unless marketing prefers another; the name appears in tool ids, so change it before 0.2.0 |
 | D7 | Should PC Guardian later show a "Deep cleanup" link to this plugin when it is installed? | Yes, as a small PC Guardian minor release after Drive Cleanup 1.0.0 |
+
+---
+
+## 18. As built: differences from this plan
+
+| Plan | As built | Why |
+| --- | --- | --- |
+| Browser dashboard for approval (§7.1, §11) | Approval in the pane beside the chat, with Claude Code's own confirmation dialog | No local web server or bundled runtime to ship; the pane's buttons can only be pressed by the person, and the dialog is refused where no one can answer (`-p`). A browser dashboard can follow if large selections need it. |
+| Findings list under 10 minutes old (S5) | Scan under 24 hours old; the approval itself must be under 15 minutes old when the scripts act | A deep scan takes minutes and reviewing takes longer. Safety comes from S7: every item is re-checked (size, date, SHA-256 for duplicates, links, protection) just before it is touched. |
+| Separate `quarantine-move.ps1` and `delete-safe.ps1` | One `apply.ps1` for both | One copy of the guard to keep right. |
+| The user Temp folder cleaned when PC Guardian is absent | Never cleaned by Drive Cleanup; PC Guardian or Windows' own tools | A folder-wide delete could not keep to the 7-day rule. Old Temp *subfolders* are still class A. |
+| Gradle wrapper distributions quarantined | Manual | Which versions projects still use cannot be told safely. |
+| Docker via `docker system df` | Size of Docker Desktop's data disk; manual commands | Drive Cleanup runs no third-party programs. |
+| Dev tool versions by running `--version` | Read from the program file's version information | Nothing is executed. |
+| `sfc /verifyonly` when elevated | Not run; the command is given | It takes long and needs administrator rights; Drive Cleanup never touches Windows files. |
+| Pending approved lists removed after a run | Kept in `runs\pending\` | The engine's file API has no delete. They are small and hold only paths already in the manifest. |
+| `.vscode` and `.idea` as project markers | Not markers; the profile root and top-level folders are never projects | Many profiles hold `.vscode` (and some a dotfiles `.git`) at their root, which would have hidden everything. |

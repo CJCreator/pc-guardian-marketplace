@@ -3,7 +3,7 @@
 export type DcStepState = 'pending' | 'running' | 'ok' | 'not_checked'
 
 export type DcStep = {
-  id: 'volume' | 'walk' | 'windows'
+  id: 'volume' | 'walk' | 'devcaches' | 'leftovers' | 'windows' | 'hash'
   label: string
   state: DcStepState
   durationMs: number | null
@@ -31,11 +31,27 @@ export type DcSummary = {
   lastAuditFolder: string | null
 }
 
+export type DcView = {
+  name: 'overview' | 'review' | 'quarantine' | 'settings'
+  category: string | null
+  page: number
+}
+
+export type DcSelection = { scanId: string; ids: string[] }
+
+export type DcActivity = {
+  state: 'idle' | 'working'
+  message: string | null
+}
+
 declare module 'claude-code' {
   interface PluginState {
     'drive-cleanup': {
       progress: Shaped<DcProgress | null>
       summary: Shaped<DcSummary | null>
+      view: Shaped<DcView>
+      selection: Shaped<DcSelection>
+      activity: Shaped<DcActivity>
     }
   }
 }

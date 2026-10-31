@@ -4,6 +4,14 @@
 
 import type {
   CandidateKind,
+  ItemResult,
+  RawApply,
+  RawCacheClean,
+  RawDevCaches,
+  RawHash,
+  RawLeftovers,
+  RawPurge,
+  RawVerify,
   Parsed,
   RawCandidate,
   RawDrive,
@@ -221,3 +229,97 @@ export const RawWindowsCheck: Check<RawWindows> = obj({
     detail: str,
   }),
 })
+
+// ------------------------------------------------------------ M2–M5 output
+
+export const RawDevCachesCheck: Check<RawDevCaches> = obj({
+  caches: list(
+    obj({
+      id: str,
+      isPresent: bool,
+      bytes: num,
+      fileCount: int,
+      lastWriteUtc: nullable(isoTime),
+      isRunning: bool,
+      isTruncated: bool,
+      roots: list(obj({ path: str, status: oneOf(['ok', 'missing', 'denied'] as const), bytes: num, fileCount: int }), 16),
+    }),
+    64,
+  ),
+})
+
+export const RawLeftoversCheck: Check<RawLeftovers> = obj({
+  installedCount: int,
+  folders: list(obj({ path: str, bytes: num, fileCount: int, lastWriteUtc: isoTime, isTruncated: bool }), 300),
+})
+
+const sha256: Check<string> = (v, at) => {
+  const text = str(v, at)
+  return /^[0-9a-f]{64}$/.test(text) ? text : fail(at, 'expected a SHA-256')
+}
+
+export const RawHashCheck: Check<RawHash> = obj({
+  elapsedMs: num,
+  isTruncated: bool,
+  resumeBelowBytes: nullable(num),
+  filesConsidered: int,
+  filesHashed: int,
+  bytesHashed: num,
+  skippedLocked: int,
+  skippedCloud: int,
+  groups: list(
+    obj({
+      sha256,
+      bytes: num,
+      files: list(obj({ path: str, modifiedUtc: isoTime, accessedUtc: isoTime, createdUtc: isoTime }), 50),
+    }),
+    20_000,
+  ),
+  folderGroups: list(obj({ signature: sha256, bytes: num, fileCount: int, folders: list(str, 20) }), 5000),
+})
+
+export const RawVerifyCheck: Check<RawVerify> = obj({
+  isElevated: bool,
+  tools: list(obj({ id: str, status: oneOf(['ok', 'not_found', 'failed'] as const), version: str }), 16),
+  projects: list(obj({ path: str, exists: bool, hasGit: bool }), 500),
+  quarantine: list(obj({ runId: str, checked: int, matched: int, missing: int, mismatched: int }), 500),
+})
+
+const refused = obj({ status: oneOf(['refused'] as const), reason: str, detail: str })
+
+const itemResult: Check<ItemResult> = obj({
+  id: str,
+  status: oneOf(['deleted', 'quarantined', 'restored', 'skipped'] as const),
+  detail: (v, at) => nullable(str)(v, at) ?? '',
+  destination: nullable(str),
+  sha256: nullable(sha256),
+  bytes: num,
+})
+
+const applyOk = obj({
+  status: oneOf(['ok'] as const),
+  runId: str,
+  quarantineDir: nullable(str),
+  deletedBytes: num,
+  quarantinedBytes: num,
+  restoredBytes: (v, at) => nullable(num)(v, at) ?? 0,
+  isTruncated: bool,
+  items: list(itemResult, 100_000),
+})
+
+const either =
+  <A, B>(ok: Check<A>, no: Check<B>): Check<A | B> =>
+  (v, at) =>
+    typeof v === 'object' && v !== null && (v as { status?: unknown }).status === 'refused' ? no(v, at) : ok(v, at)
+
+export const RawApplyCheck: Check<RawApply> = either(applyOk, refused)
+
+export const RawCacheCleanCheck: Check<RawCacheClean> = either(
+  obj({ status: oneOf(['ok'] as const), removedCount: int, removedBytes: num, skippedCount: int }),
+  refused,
+)
+
+export const RawPurgeCheck: Check<RawPurge> = either(
+  obj({ status: oneOf(['ok'] as const), runId: str, removedCount: int, removedBytes: num, failedCount: int }),
+  refused,
+)

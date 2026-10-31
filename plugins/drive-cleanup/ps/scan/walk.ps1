@@ -7,8 +7,8 @@
 # Reports: folder sizes three levels deep, the 100 largest files, age totals,
 # file types, development projects (left alone), and candidates for cleanup by
 # kind (installers, archives, crash dumps, old logs, old Temp folders, old
-# downloads, large old files, empty folders). Candidates are only collected in
-# this user's own areas; system folders and other profiles are summed only.
+# downloads, large old files, empty folders, and build caches inside projects).
+# Candidates are only collected in this user's own areas; system folders and other profiles are summed only.
 # Stops at a time and entry limit and says so (isTruncated).
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
@@ -81,7 +81,7 @@ foreach ($name in @('Windows', 'Program Files', 'Program Files (x86)', 'ProgramD
 [void]$sumOnly.Add($systemRoot)
 
 $projectMarkers = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
-foreach ($name in @('.git', 'package.json', 'pyproject.toml', 'requirements.txt', 'setup.py', 'go.mod', 'Cargo.toml', 'pom.xml', 'build.gradle', 'build.gradle.kts', 'composer.json', 'Gemfile', '.vscode', '.idea')) {
+foreach ($name in @('.git', 'package.json', 'pyproject.toml', 'requirements.txt', 'setup.py', 'go.mod', 'Cargo.toml', 'pom.xml', 'build.gradle', 'build.gradle.kts', 'composer.json', 'Gemfile')) {
     [void]$projectMarkers.Add($name)
 }
 $installerExt = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
@@ -114,11 +114,13 @@ $folderDepth = [System.Collections.Generic.Dictionary[string, int]]::new([System
 $protAgg = [System.Collections.Generic.Dictionary[string, double[]]]::new([System.StringComparer]::OrdinalIgnoreCase)
 $extAgg = [System.Collections.Generic.Dictionary[string, double[]]]::new([System.StringComparer]::OrdinalIgnoreCase)
 $tempBuckets = [System.Collections.Generic.Dictionary[string, object]]::new([System.StringComparer]::OrdinalIgnoreCase)
+# Build caches inside projects that their tools re-create: Next.js, Vite, Turbo, Parcel.
+$buildBuckets = [System.Collections.Generic.Dictionary[string, object]]::new([System.StringComparer]::OrdinalIgnoreCase)
 
 $largest = [System.Collections.Generic.List[object]]::new()
 $largestFloor = -1.0
 
-$kinds = @('installer', 'archive', 'crash_dump', 'log', 'temp_extract', 'old_download', 'large_old', 'empty_folder')
+$kinds = @('installer', 'archive', 'crash_dump', 'log', 'temp_extract', 'old_download', 'large_old', 'empty_folder', 'build_cache')
 $cand = @{}
 $candCount = @{}
 $candBytes = @{}
@@ -130,7 +132,7 @@ foreach ($k in $kinds) {
     $candFloor[$k] = -1.0
 }
 
-function Add-Candidate([string]$kind, [string]$path, [double]$bytes, [int]$count, [bool]$isFolder, [long]$mt, [long]$at, [long]$ct, $extracted) {
+function Add-Candidate([string]$kind, [string]$path, [double]$bytes, [int]$count, [bool]$isFolder, [long]$mt, [long]$at, [long]$ct, $extracted, [bool]$inProject = $false) {
     $script:candCount[$kind] = $script:candCount[$kind] + 1
     $script:candBytes[$kind] = $script:candBytes[$kind] + $bytes
     if ($bytes -le $script:candFloor[$kind]) { return }
@@ -144,7 +146,7 @@ function Add-Candidate([string]$kind, [string]$path, [double]$bytes, [int]$count
         modifiedUtc     = Format-Time $mt
         accessedUtc     = Format-Time $at
         createdUtc      = Format-Time $ct
-        inProject       = $false
+        inProject       = $inProject
         extractedFolder = $extracted
     })
     if ($list.Count -ge ($script:keepPerKind * 4)) {
@@ -164,7 +166,7 @@ $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 $isTruncated = $false
 $pending = [System.Collections.Generic.Stack[object]]::new()
 $pending.Push(@{
-    Path = $driveRoot.TrimEnd('\') + '\'; Depth = 0; FolderKeys = @(); InProject = $false; SumOnly = $false; ProtKey = $null
+    Path = $driveRoot.TrimEnd('\') + '\'; Depth = 0; FolderKeys = @(); InProject = $false; SumOnly = $false; ProtKey = $null; BuildBucket = $null
     InProfile = $false; InAppData = $false; InTemp = $false; TempBucket = $null; InDownloads = $false; InRootUser = $false
 })
 
@@ -194,7 +196,9 @@ while ($pending.Count -gt 0) {
     }
 
     $inProject = $item.InProject
-    if (-not $inProject -and -not $item.SumOnly) {
+    # The profile and the drive's top folders are never projects themselves (a
+    # dotfiles repository or a stray package.json there would cover everything).
+    if (-not $inProject -and -not $item.SumOnly -and $item.Depth -ge 2 -and -not $item.Path.Equals($userProfile, $ignoreCase)) {
         foreach ($c in $children) {
             $n = $c.Name
             if ($projectMarkers.Contains($n) -or $n.EndsWith('.sln', $ignoreCase) -or $n.EndsWith('.csproj', $ignoreCase)) {
@@ -235,7 +239,17 @@ while ($pending.Count -gt 0) {
                 $bucket = $p
                 $tempBuckets[$p] = @{ Bytes = 0.0; Files = 0; MaxTicks = $c.LastWriteTimeUtc.Ticks; At = $c.LastAccessTimeUtc.Ticks; Ct = $c.CreationTimeUtc.Ticks }
             }
+            $build = $item.BuildBucket
+            if ($null -eq $build -and $inProject -and -not $item.SumOnly) {
+                $leaf = $c.Name
+                $parentLeaf = [System.IO.Path]::GetFileName($item.Path.TrimEnd('\'))
+                if (($leaf -eq 'cache' -and $parentLeaf -eq '.next') -or ($leaf -eq '.vite' -and $parentLeaf -eq 'node_modules') -or $leaf -eq '.turbo' -or $leaf -eq '.parcel-cache') {
+                    $build = $p
+                    $buildBuckets[$p] = @{ Bytes = 0.0; Files = 0; MaxTicks = $c.LastWriteTimeUtc.Ticks; At = $c.LastAccessTimeUtc.Ticks; Ct = $c.CreationTimeUtc.Ticks }
+                }
+            }
             $pending.Push(@{
+                BuildBucket = $build
                 Path        = $p
                 Depth       = $depth
                 FolderKeys  = $keys
@@ -302,6 +316,13 @@ while ($pending.Count -gt 0) {
             }
         }
 
+        if ($null -ne $item.BuildBucket) {
+            $bb = $buildBuckets[$item.BuildBucket]
+            $bb.Bytes += $len
+            $bb.Files += 1
+            if ($mt -gt $bb.MaxTicks) { $bb.MaxTicks = $mt }
+        }
+
         if ($item.SumOnly -or $inProject) { continue }
         if (([int]$attr -band $cloudMask) -ne 0) { continue }
 
@@ -332,6 +353,12 @@ foreach ($pair in $tempBuckets.GetEnumerator()) {
     $b = $pair.Value
     if ($b.Bytes -le 0) { continue }
     Add-Candidate 'temp_extract' $pair.Key $b.Bytes $b.Files $true $b.MaxTicks $b.At $b.Ct $null
+}
+
+foreach ($pair in $buildBuckets.GetEnumerator()) {
+    $b = $pair.Value
+    if ($b.Bytes -le 0) { continue }
+    Add-Candidate 'build_cache' $pair.Key $b.Bytes $b.Files $true $b.MaxTicks $b.At $b.Ct $null $true
 }
 
 # ------------------------------------------------------------------ output

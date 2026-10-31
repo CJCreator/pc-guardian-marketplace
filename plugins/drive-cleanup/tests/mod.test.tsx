@@ -50,7 +50,7 @@ const textOf = (r: unknown): string => {
   return typeof result === 'string' ? result : JSON.stringify(r)
 }
 
-test('registers its nine read-only tools', async ($, on) => {
+test('registers its read-only tools, and none that cleans', async ($, on) => {
   const names: string[] = []
   world(on, new Map(), [], { registered: names })
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
@@ -63,8 +63,14 @@ test('registers its nine read-only tools', async ($, on) => {
     'get_findings',
     'get_windows_recommendations',
     'generate_audit_reports',
+    'get_dev_caches',
+    'get_duplicate_groups',
+    'get_quarantine',
+    'get_settings',
+    'verify_cleanup',
     'open_pane',
   ])
+  expect(names.some(n => /clean_|delete|remove|purge|restore|move|quarantine_|set_/.test(n))).toBe(false)
 })
 
 test('away from Windows, the scan runs nothing and says why', async ($, on) => {
@@ -125,4 +131,56 @@ test('the pane invites a first scan, on every surface', async ($, on) => {
     expect(await ui.find({ type: 'Button', key: 'run' })).toBeDefined()
     await ui.unmount()
   }
+})
+
+const PANE = {
+  plugin: 'drive-cleanup',
+  component: 'Pane',
+  requestId: 'drive-cleanup',
+  props: {
+    title: 'Drive Cleanup',
+    isFocused: false,
+    bodyColumns: 70,
+    placement: 'dock',
+    scroll: { offset: 0, bodyRows: 30 },
+    view: {},
+  },
+} as const
+
+test('Review without a scan asks for one; Settings start with everything off', async ($, on) => {
+  const files: Files = new Map()
+  world(on, files, [])
+  mock.env(on, { APPDATA })
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await $.ui.mount({ ...PANE, surface })
+    await ui.press({ key: 'tab-review' })
+    expect((await ui.find({ type: 'Text', text: /Run a deep scan first/ }))?.text).toContain('Run a deep scan first')
+    await ui.press({ key: 'tab-settings' })
+    expect((await ui.find({ type: 'Text', text: /Cleanup:/ }))?.text).toContain('off')
+    expect((await ui.find({ type: 'Text', text: /Duplicate search/ }))?.text).toContain('off')
+    expect((await ui.find({ type: 'Text', text: /Only you can change these/ }))).toBeDefined()
+    await ui.press({ key: 'tab-overview' })
+    await ui.unmount()
+  }
+})
+
+test('turning cleanup on needs an answer: a dismissed question leaves it off', async ($, on) => {
+  const files: Files = new Map()
+  world(on, files, [])
+  mock.env(on, { APPDATA })
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  await ui.press({ key: 'tab-settings' })
+  await ui.press({ key: 'set-cleanup' })
+  const saved = [...files.entries()].find(([k]) => k.endsWith('settings.json'))?.[1]
+  expect(saved === undefined || !saved.includes('"cleanupEnabled":true')).toBe(true)
+  await ui.unmount()
+})
+
+test('Claude can read settings and quarantine, never change them', async ($, on) => {
+  world(on, new Map(), [])
+  mock.env(on, { APPDATA })
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  expect(textOf(await $.tool.call({ tool: 'mcp__drive-cleanup__get_settings' }))).toContain('Cleanup off')
+  expect(textOf(await $.tool.call({ tool: 'mcp__drive-cleanup__get_quarantine' }))).toContain('No cleanups yet')
+  expect(textOf(await $.tool.call({ tool: 'mcp__drive-cleanup__get_dev_caches' }))).toContain('There is no deep scan yet')
 })

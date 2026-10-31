@@ -7,6 +7,8 @@
 
 import { ageDays, ageText, sizeText, stableId } from './format.ts'
 import { baseName, extensionOf, isInAppData, isUnder, normalizePath, parentPath, protectedBy } from './paths.ts'
+import { DEV_CACHES } from './devcaches.ts'
+import { duplicateFindings } from './duplicates.ts'
 import type {
   CategoryId,
   CategoryTotal,
@@ -14,6 +16,9 @@ import type {
   Finding,
   FindingClass,
   RawCandidate,
+  RawDevCaches,
+  RawHash,
+  RawLeftovers,
   RawWalk,
   RawWindows,
   RawWindowsItem,
@@ -89,7 +94,7 @@ function isAllowlistedLog(path: string, ctx: ClassifyContext): boolean {
 export function classifyCandidate(c: RawCandidate, ctx: ClassifyContext): Finding | undefined {
   const rule = protectedBy(c.path, ctx, c.isFolder)
   if (rule !== null) return protectedFinding(ctx, c, rule)
-  if (c.inProject) return protectedFinding(ctx, c, 'Inside a development project')
+  if (c.inProject && c.kind !== 'build_cache') return protectedFinding(ctx, c, 'Inside a development project')
 
   const modifiedDays = ageDays(c.modifiedUtc, ctx.nowMs)
   const age = ageText(modifiedDays)
@@ -199,6 +204,16 @@ export function classifyCandidate(c: RawCandidate, ctx: ClassifyContext): Findin
         evidence: { rule: 'large_and_old', values },
         confidence: 'low',
       })
+    case 'build_cache':
+      return finding(ctx, {
+        ...base,
+        category: 'build_cache',
+        class: 'review',
+        action: 'quarantine',
+        reason: `Build cache inside the project ${parentPath(parentPath(c.path))}, last written ${age} ago. Its tool rebuilds it (the next build is slower once). Nothing else in the project is touched.`,
+        evidence: { rule: 'project_build_cache', values },
+        confidence: 'medium',
+      })
     case 'empty_folder':
       return finding(ctx, {
         ...base,
@@ -218,7 +233,8 @@ function userTempFinding(walk: RawWalk, ctx: ClassifyContext): Finding | undefin
   return finding(ctx, {
     category: 'user_temp',
     class: 'safe',
-    action: ctx.isPcGuardianInstalled ? 'pc_guardian' : 'delete',
+    // Never cleaned here: a folder-wide delete could not keep to the 7-day rule.
+    action: ctx.isPcGuardianInstalled ? 'pc_guardian' : 'manual',
     path: ctx.temp,
     bytes: walk.userTemp.oldBytes,
     fileCount: walk.userTemp.oldCount,
@@ -227,7 +243,7 @@ function userTempFinding(walk: RawWalk, ctx: ClassifyContext): Finding | undefin
     accessedUtc: null,
     reason: ctx.isPcGuardianInstalled
       ? `Temp files not written for ${String(THRESHOLDS.tempDays)} days or more. Clean them with PC Guardian's cleanup.`
-      : `Temp files not written for ${String(THRESHOLDS.tempDays)} days or more. Apps re-create what they need.`,
+      : `Temp files not written for ${String(THRESHOLDS.tempDays)} days or more. Clean them with Settings > System > Storage > Temporary files, or Storage Sense. (Old folders in Temp are listed separately and can be cleaned here.)`,
     evidence: {
       rule: 'temp_file_age',
       values: { oldCount: walk.userTemp.oldCount, totalCount: walk.userTemp.fileCount },
@@ -305,6 +321,69 @@ function windowsFindings(win: RawWindows, ctx: ClassifyContext): Finding[] {
   return out
 }
 
+function devCacheFindings(raw: RawDevCaches, ctx: ClassifyContext): Finding[] {
+  const out: Finding[] = []
+  for (const cache of raw.caches) {
+    const spec = DEV_CACHES.find(c => c.id === cache.id)
+    if (spec === undefined || !cache.isPresent || cache.bytes <= 0) continue
+    const root = cache.roots.find(r => r.status !== 'missing')?.path ?? ''
+    const isSafe = spec.cls === 'safe'
+    out.push(
+      finding(ctx, {
+        category: isSafe ? 'dev_cache_safe' : 'dev_cache_review',
+        class: isSafe ? 'safe' : 'review',
+        action: isSafe ? 'delete' : 'manual',
+        path: cache.roots.length > 1 ? parentPath(root) : root,
+        bytes: cache.bytes,
+        fileCount: cache.fileCount,
+        isFolder: true,
+        modifiedUtc: cache.lastWriteUtc,
+        accessedUtc: null,
+        reason: `${spec.label} (${spec.tool}). ${spec.how} ${spec.note}${cache.isRunning ? ` ${spec.tool} is running now: close it before cleaning.` : ''}`,
+        evidence: { rule: `dev_cache_${spec.id}`, values: { bytes: cache.bytes, isRunning: cache.isRunning ? 'yes' : 'no' } },
+        confidence: isSafe ? 'high' : 'medium',
+        cacheId: spec.id,
+      }),
+    )
+  }
+  return out
+}
+
+function leftoverFindings(raw: RawLeftovers, ctx: ClassifyContext): Finding[] {
+  return raw.folders.map(f => {
+    const rule = protectedBy(f.path, ctx, true)
+    const days = ageDays(f.lastWriteUtc, ctx.nowMs)
+    return finding(ctx, {
+      category: rule === null ? 'leftover' : 'protected',
+      class: rule === null ? 'review' : 'protected',
+      action: rule === null ? 'quarantine' : 'none',
+      path: f.path,
+      bytes: f.bytes,
+      fileCount: f.fileCount,
+      isFolder: true,
+      modifiedUtc: f.lastWriteUtc,
+      accessedUtc: null,
+      reason:
+        rule === null
+          ? `App data folder whose name matches none of the ${String(raw.installedCount)} installed programs; last changed ${ageText(days)} ago. Matched by name only: it may belong to a portable app or a program installed another way.`
+          : `Protected: ${rule}.`,
+      evidence: { rule: 'no_installed_program', values: { installed: raw.installedCount } },
+      confidence: 'low',
+      protectedBy: rule,
+    })
+  })
+}
+
+export type ScanInputs = {
+  walk: RawWalk | null
+  windows: RawWindows | null
+  devcaches?: RawDevCaches | null
+  leftovers?: RawLeftovers | null
+  hash?: RawHash | null
+  /** Finding ids already cleaned or quarantined since this scan. */
+  done?: ReadonlySet<string>
+}
+
 export type Classified = {
   findings: Finding[]
   totals: CategoryTotal[]
@@ -322,27 +401,40 @@ const CATEGORY_ORDER: readonly CategoryId[] = [
   'old_download',
   'large_old',
   'empty_folder',
+  'build_cache',
+  'dev_cache_safe',
+  'dev_cache_review',
+  'leftover',
+  'duplicate',
+  'duplicate_folder',
   'windows_managed',
   'protected',
 ]
 
 /** Every finding of a scan, largest first, with totals by category. */
-export function classifyScan(
-  walk: RawWalk | null,
-  win: RawWindows | null,
-  ctx: ClassifyContext,
-): Classified {
+export function classifyScan(inputs: ScanInputs, ctx: ClassifyContext): Classified {
+  const { walk, windows: win } = inputs
   const findings: Finding[] = []
   const seen = new Set<string>()
+  const done = inputs.done ?? new Set<string>()
+  // A file in a duplicate group is listed there only, not again as a download or installer.
+  const dupes = inputs.hash ? duplicateFindings(inputs.hash, ctx) : []
+  const dupePaths = new Set(dupes.map(f => normalizePath(f.path)))
   const push = (f: Finding | undefined): void => {
-    if (f === undefined || seen.has(f.id)) return
+    if (f === undefined || seen.has(f.id) || done.has(f.id)) return
     seen.add(f.id)
     findings.push(f)
   }
   if (walk !== null) {
     push(userTempFinding(walk, ctx))
-    for (const c of walk.candidates) push(classifyCandidate(c, ctx))
+    for (const c of walk.candidates) {
+      if (!c.isFolder && dupePaths.has(normalizePath(c.path))) continue
+      push(classifyCandidate(c, ctx))
+    }
   }
+  for (const f of dupes) push(f)
+  if (inputs.devcaches) for (const f of devCacheFindings(inputs.devcaches, ctx)) push(f)
+  if (inputs.leftovers) for (const f of leftoverFindings(inputs.leftovers, ctx)) push(f)
   if (win !== null) for (const f of windowsFindings(win, ctx)) push(f)
   findings.sort((a, b) => b.bytes - a.bytes)
 
@@ -359,6 +451,7 @@ export function classifyScan(
     old_download: 'old_download',
     large_old: 'large_old',
     empty_folder: 'empty_folder',
+    build_cache: 'build_cache',
   }
   const totals: CategoryTotal[] = []
   for (const category of CATEGORY_ORDER) {
@@ -380,6 +473,7 @@ export function classifyScan(
   let reviewBytes = 0
   let manualBytes = 0
   for (const f of findings) {
+    if (f.action === 'none') continue
     if (f.action === 'manual') manualBytes += f.bytes
     else if (f.class === 'safe') safeBytes += f.bytes
     else if (f.class === 'review') reviewBytes += f.bytes
@@ -398,6 +492,12 @@ export const CATEGORY_LABEL: Record<CategoryId, string> = {
   old_download: 'Old downloads',
   large_old: 'Large old files',
   empty_folder: 'Empty folders',
+  build_cache: 'Project build caches',
+  dev_cache_safe: 'Developer caches',
+  dev_cache_review: 'Developer caches (manual)',
+  leftover: 'App leftovers',
+  duplicate: 'Duplicate files',
+  duplicate_folder: 'Duplicate folders',
   windows_managed: 'Windows-managed',
   protected: 'Protected',
 }

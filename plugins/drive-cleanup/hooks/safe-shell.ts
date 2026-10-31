@@ -1,5 +1,13 @@
 import type { EngineInterface } from 'claude-code'
-import { normalizeScriptText, SCRIPTS, sha256Hex } from './core/scripts.ts'
+import {
+  ACTIONS,
+  checkParams,
+  normalizeScriptText,
+  SCRIPTS,
+  sha256Hex,
+  type ActionId,
+  type ScriptSpec,
+} from './core/scripts.ts'
 import type { NotChecked, ScriptRun, StepId } from './core/types.ts'
 import { SCRIPT_HASHES } from './script-hashes.ts'
 
@@ -12,16 +20,47 @@ const notChecked = (reason: NotChecked['reason'], detail: string): NotChecked =>
 })
 
 /**
+ * Runs one read-only scan script by id. See runAllowlisted.
+ */
+export async function runScript(
+  $: EngineInterface,
+  id: StepId | 'verify',
+  params: Readonly<Record<string, string>> = {},
+): Promise<ScriptRun> {
+  return runAllowlisted($, SCRIPTS[id], params)
+}
+
+/**
+ * Runs one action script (ps/actions/), the only scripts that change files.
+ * Only hooks/cleanup.ts calls this, and only after the person approved in the
+ * pane and confirmed in Claude Code's own dialog.
+ */
+export async function runAction(
+  $: EngineInterface,
+  id: ActionId,
+  params: Readonly<Record<string, string>>,
+): Promise<ScriptRun> {
+  return runAllowlisted($, ACTIONS[id], params)
+}
+
+/**
  * The only place Drive Cleanup starts a process.
  *
- * It runs one allowlisted script from the plugin's `ps/` folder, by id, and
- * only after the file's SHA-256 matches the hash recorded at build time. The
- * command line is fixed: Windows PowerShell from %SystemRoot%, no profile, no
- * prompts, an execution-policy bypass for this one call, `-File <script>`. It
- * runs as the current user, never elevated, and takes no input from callers.
+ * It runs one allowlisted script from the plugin's `ps/` folder, and only after
+ * the file's SHA-256 matches the hash recorded at build time. The command line
+ * is fixed: Windows PowerShell from %SystemRoot%, no profile, no prompts, an
+ * execution-policy bypass for this one call, `-File <script>`. It runs as the
+ * current user, never elevated. Inputs are DC_* variables checked against the
+ * script's own patterns.
  */
-export async function runScript($: EngineInterface, id: StepId): Promise<ScriptRun> {
-  const spec = SCRIPTS[id]
+async function runAllowlisted(
+  $: EngineInterface,
+  spec: ScriptSpec,
+  params: Readonly<Record<string, string>>,
+): Promise<ScriptRun> {
+  const checked = checkParams(spec, params)
+  if (checked.status !== 'ok') return notChecked('failed', checked.detail)
+
   const systemRoot = await $.env.get('SystemRoot')
   if (systemRoot === undefined) {
     return notChecked('unsupported_platform', 'Windows was not detected (SystemRoot is not set).')
@@ -57,15 +96,13 @@ export async function runScript($: EngineInterface, id: StepId): Promise<ScriptR
 
   let ran: Awaited<ReturnType<EngineInterface['process']['run']>>
   try {
-    ran = await $.process.run(argv, { timeoutMs: spec.timeoutMs })
+    ran = await $.process.run(argv, { timeoutMs: spec.timeoutMs, env: checked.env })
   } catch {
-    return notChecked(
-      'timeout',
-      `${spec.file} did not finish within ${String(spec.timeoutMs / 1000)} s.`,
-    )
+    return notChecked('timeout', `${spec.file} did not finish within ${String(spec.timeoutMs / 1000)} s.`)
   }
   if (ran.exitCode !== 0) {
-    return notChecked('failed', `${spec.file} exited with code ${String(ran.exitCode)}.`)
+    const reason = ran.stderr.split(/\r?\n/).find(l => l.trim() !== '')?.slice(0, 200) ?? ''
+    return notChecked('failed', `${spec.file} exited with code ${String(ran.exitCode)}${reason === '' ? '' : `: ${reason}`}.`)
   }
   if (ran.isStdoutTruncated || utf8.encode(ran.stdout).length > spec.maxOutputBytes) {
     return notChecked(

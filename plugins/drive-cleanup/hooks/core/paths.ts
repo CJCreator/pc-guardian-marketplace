@@ -127,6 +127,9 @@ const DRIVER_EXTENSIONS = new Set(['.sys', '.inf', '.cat'])
 
 const EDITOR_DATA = ['Code', 'Code - Insiders', 'Cursor', 'Antigravity', 'VSCodium'] as const
 
+/** Inside an editor's data folder, only these re-creatable caches are not protected. */
+const EDITOR_CACHE_PARTS = ['Cache', 'CachedData', 'CachedExtensionVSIXs', 'Code Cache', 'GPUCache', 'logs'] as const
+
 /** Profile-relative locations Windows or apps own outright. */
 const PROFILE_PROTECTED: readonly { parts: string[]; rule: string }[] = [
   { parts: ['AppData', 'Local', 'Packages'], rule: 'Microsoft Store app data' },
@@ -189,7 +192,11 @@ export function protectedBy(path: string, ctx: ClassifyContext, isFolder = false
       )
       if (!isException) return 'Windows profile data'
     }
+    const isEditorCache = EDITOR_DATA.some(name =>
+      EDITOR_CACHE_PARTS.some(part => isUnder(p, join(ctx.appData, name, part))),
+    )
     for (const entry of PROFILE_PROTECTED) {
+      if (isEditorCache && entry.rule === 'Editor data') continue
       if (isUnder(p, join(ctx.userProfile, ...entry.parts))) return entry.rule
     }
   }

@@ -14,8 +14,8 @@
     {
       "name": "drive-cleanup",
       "source": "./plugins/drive-cleanup",
-      "description": "Deep C: drive audit for Windows: where the space went, old installers and archives, dumps, logs, large old files, classified safe / review / protected, with reports. Read-only preview.",
-      "version": "0.2.0-beta.1"
+      "description": "Deep C: drive audit and cleanup for Windows: duplicates by SHA-256, installers, archives, developer caches, leftovers. Scans only read; you approve each item; files go to a restorable quarantine. Beta.",
+      "version": "1.0.0-beta.1"
     }
   ]
 }

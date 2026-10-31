@@ -4,6 +4,26 @@ All notable changes to Drive Cleanup. The format follows [Keep a Changelog](http
 
 ## [Unreleased]
 
+## [1.0.0-beta.1] - 2026-10-31
+
+Every milestone of PLAN.md built. Tested off Windows; not yet run on a Windows PC: see TESTING.md.
+
+### Added
+
+- **Cleanup you approve** (M4): in the pane's Review, select by category or item and press Clean selected…; Claude Code asks you to confirm. Class A (re-creatable) is deleted; class B is moved to `Drive Cleanup Quarantine`, on another drive when there is room. Each item is re-checked just before it is touched (unchanged, not a link, not protected, SHA-256 for duplicates); a move across drives is verified before the original is removed. Off until you turn it on in Settings.
+- **Quarantine view**: Restore a run, or Delete it for good (with its own confirmation). Never deleted by itself.
+- **Developer caches** (M2): npm, Yarn, pip, NuGet, VS Code and Antigravity caches cleaned on approval while the tool is closed; pnpm, Gradle, Maven, NuGet packages and Docker as manual steps. Project build caches (`.next\cache`, `node_modules\.vite`, `.turbo`, `.parcel-cache`).
+- **App leftovers** (M2): app-data folders matching no installed program, as low-confidence review items.
+- **Duplicates** (M3), opt-in because it reads file contents: SHA-256 groups and duplicate folders, a suggested copy to keep, never every copy; resumable.
+- **Verification** (M5): free space again, developer tools, projects and quarantined files checked; `final_cleanup_report.md`.
+- **Reports**: `duplicate_files.csv`, `cache_analysis.md`, `deletion_manifest.csv`, `final_cleanup_report.md`.
+- **Tools** `get_dev_caches`, `get_duplicate_groups`, `get_quarantine`, `get_settings`, `verify_cleanup` (all read-only; none can clean); skills `/drive-cleanup:duplicates`, `/drive-cleanup:dev-caches`, `/drive-cleanup:review`, `/drive-cleanup:verify`.
+- `TESTING.md`: the Windows test plan.
+
+### Fixed
+
+- A `.vscode` folder or a dotfiles `.git` in the profile no longer makes the whole profile count as a development project.
+
 ## [0.2.0-beta.1] - 2026-10-31
 
 The read-only deep audit (milestone M1). Built and tested off Windows; not yet run on a Windows PC.

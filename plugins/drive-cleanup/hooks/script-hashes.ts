@@ -2,7 +2,15 @@
 // script under ps/ (BOM removed, LF line ends). A script whose hash does not
 // match is never run.
 export const SCRIPT_HASHES: Readonly<Record<string, string>> = {
+  'actions/apply.ps1': '75611d2f0f357558f17a8c7e0f3eec80f53baa7d9eca39e5f9a5f5923f28e204',
+  'actions/clean-cache.ps1': '3500852fb01511145cd7422f600b272d12cbb379f19b354167b6df9024fef1f9',
+  'actions/purge.ps1': 'fd7e8aca6a1367ec5c8e09f345ab6690d5fb9f31d2b513ae2516821cba2fe3ee',
+  'actions/restore.ps1': 'c6f22065bb2e9566fdce49a38ed7475d6fad4d363eb79efa976ee6f47ded205b',
+  'scan/dev-caches.ps1': '77b71a516175d95e3a319f77300e346a9eb7ec8b1dc374cc04705b063d8c9323',
+  'scan/hash.ps1': '803f76d4fc30ec13dd202d2b8444845ee55fe4ac9f33def5e66f4169934aeb0b',
+  'scan/leftovers.ps1': '47c5670f83e1c7cf719a7629646845d4d966cc2f81741465d73f95ce2dc2d665',
+  'scan/verify.ps1': '8611d019dbcfc8ee314a50a5cfc2abb0d7603cff0d987fa726b71c09c3673c8f',
   'scan/volume.ps1': '85d839ab6992251ea3c95bf515897a1025b0db1ef45c68884760b51ed9f38468',
-  'scan/walk.ps1': '4a66e84f11fcb384991ab8af02d41a9fe552a42baa7aadf67d81fed49b207e16',
+  'scan/walk.ps1': '0d7ec2874f9a189aee9e85f103cfc1d594eb74e0d306b3b268e3421433433e87',
   'scan/windows.ps1': 'baaf598a9fb7e74bf0533757cd2a95a3ca40500d2f90215ae52df93575d021e5',
 }

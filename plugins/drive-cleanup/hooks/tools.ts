@@ -2,11 +2,15 @@ import type { EngineInterface } from 'claude-code'
 import { CATEGORY_LABEL, CLASS_LABEL } from './core/classify.ts'
 import { percentText, sizeText } from './core/format.ts'
 import { isUnder, protectedBy } from './core/paths.ts'
-import { buildReports } from './core/reports.ts'
+import { DEV_CACHES } from './core/devcaches.ts'
+import { buildReports, finalReport } from './core/reports.ts'
 import { normalizeScriptText, SCRIPTS, sha256Hex } from './core/scripts.ts'
 import type { CategoryId, FindingClass } from './core/types.ts'
 import { SCRIPT_HASHES } from './script-hashes.ts'
 import { dataFolder, writeDataFile } from './safe-writer.ts'
+import { readManifest, readRunIndex } from './cleanup.ts'
+import { loadSettings } from './settings-store.ts'
+import { readLatestVerification, verifyCleanup } from './verify.ts'
 import {
   isScanRunning,
   loadLatestScan,
@@ -28,13 +32,18 @@ export type ToolName =
   | 'get_findings'
   | 'get_windows_recommendations'
   | 'generate_audit_reports'
+  | 'get_dev_caches'
+  | 'get_duplicate_groups'
+  | 'get_quarantine'
+  | 'get_settings'
+  | 'verify_cleanup'
   | 'open_pane'
 
 const CLASSES: readonly FindingClass[] = ['safe', 'review', 'protected']
 const CATEGORIES = Object.keys(CATEGORY_LABEL) as CategoryId[]
 
 const READ_ONLY_NOTE =
-  'Drive Cleanup only reads. It cannot delete or move anything in this version, and neither may you on the strength of these results: describe what the person can do and let them decide.'
+  'These tools only read. Cleaning happens only when the person selects items in the Drive Cleanup pane (Review) and confirms; you cannot clean, and must not delete, move or change files any other way on the strength of these results.'
 
 export const TOOL_SPECS: Record<ToolName, { description: string; inputSchema: Record<string, unknown> }> = {
   self_check: {
@@ -84,11 +93,38 @@ export const TOOL_SPECS: Record<ToolName, { description: string; inputSchema: Re
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
   generate_audit_reports: {
-    description: 'Writes the audit reports of the latest deep scan (storage_audit.md, largest_files.csv, installers_and_archives.csv, cleanup_recommendations.md) to a new folder in Drive Cleanup\'s data folder and returns its path. Changes nothing else.',
+    description: 'Writes the audit reports of the latest deep scan (storage_audit.md, largest_files.csv, installers_and_archives.csv, cleanup_recommendations.md, cache_analysis.md, duplicate_files.csv, deletion_manifest.csv, and final_cleanup_report.md once a cleanup was verified) to a new folder in Drive Cleanup\'s data folder and returns its path. Changes nothing else.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+  },
+  get_dev_caches: {
+    description: 'Developer tool caches (npm, Yarn, pip, NuGet, VS Code, Antigravity, pnpm, Gradle, Maven, Docker) and project build caches from the latest scan: size, whether the tool is running, whether Drive Cleanup can clean it or it is manual (with the command for the person to run).',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+  },
+  get_duplicate_groups: {
+    description: 'Duplicate files and folders (identical by SHA-256) from the latest scan, each group with every copy, the suggested copy to keep and why. Empty when duplicate search is off (it reads file contents, so only the person can turn it on).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        limit: { type: 'integer', minimum: 1, maximum: 50, default: 10 },
+        offset: { type: 'integer', minimum: 0, default: 0 },
+      },
+      additionalProperties: false,
+    },
+  },
+  get_quarantine: {
+    description: 'Cleanups so far and what is in quarantine: each run with its date, size, location and state (active, restored, deleted for good). Restoring or deleting is done by the person in the pane.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+  },
+  get_settings: {
+    description: "Drive Cleanup's settings: whether cleanup is on, whether duplicate search is on, the quarantine drive and the duplicate size limits. Only the person changes them, in the pane.",
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+  },
+  verify_cleanup: {
+    description: 'After a cleanup: measures free space again and checks, read-only, that developer tools are still installed, projects still have their .git folder, and quarantined files are intact (SHA-256). Writes final_cleanup_report.md and the deletion manifest. Takes up to a few minutes.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
   open_pane: {
-    description: 'Opens the Drive Cleanup pane beside the chat: scan progress, recoverable space and Run / Cancel / Retry buttons.',
+    description: 'Opens the Drive Cleanup pane beside the chat: scan progress, recoverable space, and the Review, Quarantine and Settings views where the person selects, approves, restores and configures. Opening it changes nothing.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
 }
@@ -290,10 +326,15 @@ async function reports($: EngineInterface): Promise<Answer> {
     volume: scan.volume,
     walk: scan.walk,
     windows: scan.windows,
+    devcaches: scan.devcaches,
+    hash: scan.hash,
     classified: scan.classified,
     recommendations: scan.recommendations,
     ctx: scan.ctx,
   })
+  files.push({ name: 'deletion_manifest.csv', text: await readManifest($) })
+  const verification = await readLatestVerification($)
+  if (verification !== undefined) files.push({ name: 'final_cleanup_report.md', text: finalReport(verification) })
   const written: string[] = []
   for (const f of files) {
     const result = await writeDataFile($, `${folderName}/${f.name}`, f.text)
@@ -305,9 +346,108 @@ async function reports($: EngineInterface): Promise<Answer> {
   const folder = written[0]?.replace(/\\[^\\]+$/, '') ?? ''
   await setLastAuditFolder($, folder)
   return answer(
-    `Wrote ${String(written.length)} reports to ${folder}. They hold full paths from this PC, so share them with care. The duplicate, cache, deletion-manifest and final reports come in later versions.`,
+    `Wrote ${String(written.length)} reports to ${folder}. They hold full paths from this PC, so share them with care.${verification === undefined ? ' final_cleanup_report.md is written once a cleanup is verified (verify_cleanup).' : ''}`,
     written,
   )
+}
+
+async function devCaches($: EngineInterface): Promise<Answer> {
+  const scan = await loadLatestScan($)
+  if (scan === undefined) return NO_SCAN
+  if (scan.devcaches === null) return { result: 'Developer caches were not checked in the latest scan.' }
+  const rows = DEV_CACHES.map(spec => {
+    const c = scan.devcaches?.caches.find(x => x.id === spec.id)
+    return {
+      id: spec.id,
+      cache: spec.label,
+      tool: spec.tool,
+      present: c?.isPresent ?? false,
+      size: sizeText(c?.bytes ?? 0),
+      bytes: c?.bytes ?? 0,
+      toolRunning: c?.isRunning ?? false,
+      class: spec.cls === 'safe' ? 'A. safe (Drive Cleanup can clean it when the person selects it)' : 'B. manual',
+      how: spec.how,
+      note: spec.note,
+    }
+  }).filter(r => r.present)
+  const builds = scan.classified.findings.filter(f => f.category === 'build_cache').map(f => ({ path: f.path, size: sizeText(f.bytes) }))
+  const total = rows.reduce((s, r) => s + r.bytes, 0)
+  return answer(`${String(rows.length)} developer caches present, ${sizeText(total)}; ${String(builds.length)} project build caches. ${READ_ONLY_NOTE}`, { caches: rows, buildCaches: builds.slice(0, 50) })
+}
+
+async function duplicateGroups($: EngineInterface, call: Readonly<Record<string, unknown>>): Promise<Answer> {
+  const scan = await loadLatestScan($)
+  if (scan === undefined) return NO_SCAN
+  if (scan.hash === null) {
+    const settings = await loadSettings($)
+    return {
+      result: settings.duplicatesEnabled
+        ? 'Duplicate search is on but did not complete in the latest scan. Run run_deep_scan again.'
+        : 'Duplicate search is off: it reads file contents, so only the person can turn it on (Drive Cleanup pane > Settings), then run a deep scan.',
+    }
+  }
+  const limit = Math.max(1, intInput(call, 'limit', 10, 50))
+  const offset = intInput(call, 'offset', 0, 100_000)
+  const groups = new Map<string, typeof scan.classified.findings>()
+  for (const f of scan.classified.findings) {
+    if (f.duplicate === undefined) continue
+    const list = groups.get(f.duplicate.groupId) ?? []
+    list.push(f)
+    groups.set(f.duplicate.groupId, list)
+  }
+  const all = [...groups.values()].sort((a, b) => (b[0]?.bytes ?? 0) * (b.length - 1) - (a[0]?.bytes ?? 0) * (a.length - 1))
+  const wasted = all.reduce((s, g) => s + (g[0]?.bytes ?? 0) * (g.length - 1), 0)
+  const page = all.slice(offset, offset + limit).map(g => ({
+    kind: g[0]?.isFolder === true ? 'folder' : 'file',
+    size: sizeText(g[0]?.bytes ?? 0),
+    copies: g.map(f => ({ path: f.path, keep: f.duplicate?.isSuggestedKeeper === true, why: f.duplicate?.isSuggestedKeeper === true ? f.duplicate.keeperReason : undefined, protectedBy: f.protectedBy })),
+  }))
+  const h = scan.hash
+  return answer(
+    `${String(all.length)} duplicate groups; ${sizeText(wasted)} could be recovered by keeping one copy of each. ${String(h.filesHashed)} files hashed${h.isTruncated ? '; the search stopped at its time limit (the pane can continue it)' : ''}${h.skippedCloud > 0 ? `; ${String(h.skippedCloud)} cloud-only files skipped` : ''}. ${READ_ONLY_NOTE}`,
+    page,
+  )
+}
+
+async function quarantine($: EngineInterface): Promise<Answer> {
+  const index = await readRunIndex($)
+  if (index.length === 0) return { result: 'No cleanups yet, and nothing in quarantine.' }
+  const active = index.filter(e => e.kind === 'cleanup' && e.quarantineState === 'active')
+  const held = active.reduce((s, e) => s + e.quarantinedBytes, 0)
+  return answer(
+    `${String(index.length)} runs recorded; ${String(active.length)} quarantine runs hold ${sizeText(held)}. Restore or delete them for good in the Drive Cleanup pane (Quarantine).`,
+    index.slice(0, 50).map(e => ({ ...e, quarantined: sizeText(e.quarantinedBytes), deleted: sizeText(e.deletedBytes) })),
+  )
+}
+
+async function settingsTool($: EngineInterface): Promise<Answer> {
+  const s = await loadSettings($)
+  return answer(
+    `Cleanup ${s.cleanupEnabled ? 'on' : 'off'}; duplicate search ${s.duplicatesEnabled ? 'on' : 'off'}; quarantine drive ${s.quarantineDrive}. Only the person changes these, in the pane (Settings).`,
+    s,
+  )
+}
+
+async function verify($: EngineInterface): Promise<Answer> {
+  const outcome = await verifyCleanup($)
+  if (outcome.status !== 'ok') return { result: outcome.message }
+  const v = outcome.verification
+  const lines = [
+    `Verified. Report: ${outcome.folder}\\final_cleanup_report.md (with deletion_manifest.csv beside it).`,
+    v.freeBeforeBytes !== null && v.freeAfterBytes !== null
+      ? `Free space: ${sizeText(v.freeBeforeBytes)} at the scan, ${sizeText(v.freeAfterBytes)} now.`
+      : 'Free space: not checked.',
+  ]
+  if (v.verify !== null) {
+    const missingTools = v.verify.tools.filter(t => t.status !== 'ok').map(t => t.id)
+    const badProjects = v.verify.projects.filter(p => !p.exists).length
+    const bad = v.verify.quarantine.reduce((s, q) => s + q.missing + q.mismatched, 0)
+    lines.push(`Tools not found on PATH: ${missingTools.length === 0 ? 'none' : missingTools.join(', ')} (absent before too is not a problem).`)
+    lines.push(`Projects missing: ${String(badProjects)}. Quarantine problems: ${String(bad)}.`)
+  } else {
+    lines.push(`Checks not run: ${v.verifyDetail ?? ''}`)
+  }
+  return answer(lines.join('\n'), v)
 }
 
 async function openPane($: EngineInterface): Promise<Answer> {
@@ -335,6 +475,16 @@ export async function answerTool($: EngineInterface, name: ToolName, call: Reado
         return await recommendations($)
       case 'generate_audit_reports':
         return await reports($)
+      case 'get_dev_caches':
+        return await devCaches($)
+      case 'get_duplicate_groups':
+        return await duplicateGroups($, call)
+      case 'get_quarantine':
+        return await quarantine($)
+      case 'get_settings':
+        return await settingsTool($)
+      case 'verify_cleanup':
+        return await verify($)
       case 'open_pane':
         return await openPane($)
     }

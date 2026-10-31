@@ -1,75 +1,76 @@
 # Drive Cleanup
 
-> **Preview (0.2.0-beta.1).** The read-only deep audit (milestone M1) is built and tested here, but has
-> **not yet run on a Windows PC**: expect rough edges, and please report what `/drive-cleanup:self-check`
-> and `/drive-cleanup:audit` say. It cannot delete or move anything yet; approval, quarantine and
-> duplicate detection come in later versions. See [PLAN.md](PLAN.md).
+> **Beta (1.0.0-beta.1): not yet run on a Windows PC.** Every milestone in [PLAN.md](PLAN.md) is built
+> and unit-tested, but the PowerShell scripts have not run on Windows yet. Follow
+> [TESTING.md](TESTING.md) on a test PC or with a backup before using it on files you care about.
 
 A deep audit and cleanup of the Windows system drive (C:), inside Claude Code, from Techgramam. Drive
-Cleanup finds where the space went and what can be recovered safely, and lets you approve each item:
+Cleanup finds where the space went and what can be recovered safely, and you approve each item:
 
 - **Duplicate files and folders**, confirmed by SHA-256 of their contents, never by name (off until you
   turn it on, because it reads file contents; nothing leaves your PC).
 - **Old installers and archives**, including archives you already extracted.
-- **Temp files, crash dumps, old logs and caches** that programs re-create.
-- **Developer caches and build output**: npm, pnpm, Yarn, pip, NuGet, Gradle, Maven, Docker, Next.js, Vite,
-  VS Code and Antigravity.
-- **Leftovers** from uninstalled programs, empty folders, and large files untouched for a year.
-- **Windows recommendations** (Storage Sense, Windows Update cleanup, hibernation file, restore points),
-  with manual steps. Drive Cleanup never changes Windows settings.
+- **Old Temp folders, crash dumps, old app logs**, which programs re-create.
+- **Developer caches and build output**: npm, Yarn, pip, NuGet, VS Code, Antigravity (cleaned on
+  approval); pnpm, Gradle, Maven, Docker (manual steps); Next.js, Vite, Turbo and Parcel caches inside
+  projects.
+- **Leftovers** of uninstalled programs, empty folders, and large files untouched for a year.
+- **Windows recommendations**: Storage Sense, Windows Update files, Windows.old, memory dumps, the
+  hibernation file, restore points, low space, disk health. Manual steps only: Drive Cleanup never
+  changes Windows settings.
 
 ## How it keeps your data safe
 
-- **Scans only read**: names, sizes and dates. Links and junctions are not followed, and OneDrive files
-  that are not downloaded are never opened.
+- **Scans only read**: names, sizes and dates. Links, junctions and cloud folders are not followed;
+  OneDrive files that are not downloaded are never opened.
 - **Protected, always**: `C:\Windows`, Program Files, ProgramData, other users, boot and recovery files,
-  browser profiles, credentials and keys (`.ssh`, `.env`, certificates), databases, and every development
-  project (`.git`, `node_modules`, lock files and source). These are shown but can never be selected.
-- **You approve each item** (cleanup arrives in a later version; this preview only reads). Claude can run
-  the audit and explain it, but cannot delete or move anything. You will tick items on the dashboard,
-  review the exact list, and confirm.
-- **Your files will be moved, not deleted.** Documents, media, installers, archives and duplicates go to a
-  quarantine folder, on another drive when there is one, and can be restored. Only re-creatable data
-  (temp files, caches, old logs) is deleted.
-- **Every change will be logged** in `deletion_manifest.csv`.
-- **Nothing is uploaded.** No telemetry, no network calls.
+  browser profiles, credentials and keys (`.ssh`, `.env`, certificates), databases, editor settings and
+  extensions, and every development project (`.git`, `node_modules`, lock files, source). They are never
+  offered.
+- **You approve each item**, in the Drive Cleanup pane, and Claude Code asks you to confirm. Claude
+  can run the audit and explain it, but has no way to clean.
+- **Your files are moved, not deleted.** Installers, archives, downloads, duplicates, leftovers and the
+  rest of class B go to `Drive Cleanup Quarantine` on another drive when there is room, and can be
+  restored. Only re-creatable data (class A) is deleted. Quarantine is never deleted until you say so.
+- **Checked again before acting.** Each item must be unchanged since the scan (size, date, and for
+  duplicates the SHA-256), not a link and not protected; a move to another drive is verified by
+  SHA-256 before the original is removed. Anything else is skipped and reported.
+- **Every change is logged** in `deletion_manifest.csv`. **Nothing is uploaded**, ever.
 
 ## Commands
 
 | Command | What it does |
 | --- | --- |
-| `/drive-cleanup:audit [rescan]` | Deep, read-only audit of C: (a few minutes) and a summary of what could be recovered, by class |
-| `/drive-cleanup:report` | Writes `storage_audit.md`, `largest_files.csv`, `installers_and_archives.csv` and `cleanup_recommendations.md` |
+| `/drive-cleanup:audit [rescan]` | Deep, read-only audit of C: (a few minutes) and what could be recovered, by class |
+| `/drive-cleanup:duplicates` | Duplicate groups and the copy to keep in each |
+| `/drive-cleanup:dev-caches` | Developer caches: safe, manual (with the command), or protected |
+| `/drive-cleanup:review` | Opens the pane's Review and explains what happens to what you select |
+| `/drive-cleanup:verify` | After a cleanup: free space, tools, projects and quarantine checked; final report |
+| `/drive-cleanup:report` | Writes the eight audit reports |
 | `/drive-cleanup:self-check` | Confirms Drive Cleanup can run on this PC |
 
-You can also just ask ("why is my C: drive full?", "which old installers can I remove?"): Claude answers
-with Drive Cleanup's read-only tools. The **Drive Cleanup pane** beside the chat shows scan progress with
-Cancel and Retry, free space and recoverable space.
+You can also just ask ("why is my C: drive full?", "which installers can I remove?").
 
-Coming later: `/drive-cleanup:duplicates`, `/drive-cleanup:dev-caches`, and `/drive-cleanup:review`, where
-you approve cleanup; and the duplicate, cache-analysis, deletion-manifest and final reports.
+**The pane** beside the chat has four views: **Overview** (free space, recoverable space, scan
+progress with Cancel and Retry, Verify), **Review** (select by category or item, then Clean
+selected…), **Quarantine** (Restore, or Delete for good) and **Settings** (cleanup on/off, duplicate
+search on/off, quarantine drive). Only you can press its buttons.
 
-## What the audit reads
+## Reports
 
-Three scripts in `ps/scan/`, each checked against its recorded fingerprint before it runs, as your normal
-user:
+In `%APPDATA%\techgramam-drive-cleanup\audits\<date>\`: `storage_audit.md`, `largest_files.csv`,
+`duplicate_files.csv`, `installers_and_archives.csv`, `cache_analysis.md`,
+`cleanup_recommendations.md`, `deletion_manifest.csv` and `final_cleanup_report.md`. They contain full
+paths from your PC, so share them with care.
 
-- **Drives and settings** (`volume.ps1`): capacity, free space, file system, disk health; your profile
-  folders; whether Storage Sense is on; whether Windows records last-opened dates.
-- **Walk of the drive** (`walk.ps1`): one pass over C: reading names, sizes and dates only, up to 4
-  minutes. System folders and other users' profiles are only added up. Links, junctions and cloud folders
-  are not followed.
-- **Windows-managed space** (`windows.ps1`): sizes of Windows Update downloads, Windows.old, Windows Temp,
-  memory dumps, the hibernation, page and swap files, your Recycle Bin, and (as administrator only)
-  restore points.
+## What it reads
 
-Results and reports are kept in `%APPDATA%\techgramam-drive-cleanup`. The reports contain full paths, so
-share them with care.
-
-## With PC Guardian
-
-Drive Cleanup works on its own. When PC Guardian is installed, the Temp folder, Recycle Bin and browser
-caches are left to PC Guardian's cleanup, and Drive Cleanup links to it.
+Scripts in `ps/scan/`, each checked against its recorded fingerprint before it runs, as your normal
+user: drives and settings (`volume.ps1`); one walk of C: (`walk.ps1`, up to 4 minutes); developer caches
+at their fixed locations (`dev-caches.ps1`); installed programs and app-data folders (`leftovers.ps1`);
+Windows-managed space (`windows.ps1`); file contents for duplicates, only when you turn it on
+(`hash.ps1`); and, when you verify, program version information and quarantined files
+(`verify.ps1`). The scripts that change files are in `ps/actions/`, and run only after you approve.
 
 ## Install
 
@@ -80,13 +81,19 @@ Requirements: Windows 10 or 11, Claude Code 2.1.312 or later, no administrator r
 ```
 
 Then start a new session and run `/drive-cleanup:self-check`. Uninstalling leaves
-`%APPDATA%\techgramam-drive-cleanup` (your scans and reports) until you delete it.
+`%APPDATA%\techgramam-drive-cleanup` and any `Drive Cleanup Quarantine` folder: restore or delete your
+quarantine runs first.
+
+## With PC Guardian
+
+Drive Cleanup works on its own. The user Temp folder and the Recycle Bin are left to PC Guardian's
+cleanup (or Windows' own), and Drive Cleanup links to it.
 
 ## Development
 
 - Core unit tests: `node --experimental-strip-types --test dev/test/*.spec.ts` (Node 22.6 or later).
 - Engine tests: `claude plugin test plugins/drive-cleanup`, from the repository root.
-- After changing a script in `ps/`: `node dev/update-hashes.mjs` (or `--check`). The mod refuses to run a
-  script whose fingerprint does not match.
+- After changing a script in `ps/`: `node dev/update-hashes.mjs` (or `--check`). A script whose
+  fingerprint does not match is never run.
 
 Copyright (c) 2026 Techgramam. Proprietary; see LICENSE.

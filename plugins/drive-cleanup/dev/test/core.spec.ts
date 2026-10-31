@@ -130,14 +130,14 @@ describe('classification (PLAN.md §5)', () => {
     const g = classifyCandidate(candidate({ kind: 'old_download', path: `${PROFILE}\\Downloads\\a.pdf` }), ctx({ lastAccessTrusted: true }))
     assert.notEqual(g?.accessedUtc, null)
   })
-  it('Temp files go to PC Guardian when it is installed', () => {
-    const without = classifyScan(walk(), null, c).findings.find(f => f.category === 'user_temp')
-    const withPcg = classifyScan(walk(), null, ctx({ isPcGuardianInstalled: true })).findings.find(f => f.category === 'user_temp')
-    assert.equal(without?.action, 'delete')
+  it('Temp files are never cleaned here: PC Guardian or Windows does it', () => {
+    const without = classifyScan({ walk: walk(), windows: null }, c).findings.find(f => f.category === 'user_temp')
+    const withPcg = classifyScan({ walk: walk(), windows: null }, ctx({ isPcGuardianInstalled: true })).findings.find(f => f.category === 'user_temp')
+    assert.equal(without?.action, 'manual')
     assert.equal(withPcg?.action, 'pc_guardian')
   })
   it('Windows-managed space is manual, never deleted by Drive Cleanup', () => {
-    const scan = classifyScan(null, windows(), c)
+    const scan = classifyScan({ walk: null, windows: windows() }, c)
     const update = scan.findings.find(f => f.evidence.rule === 'windows_update_cache')
     assert.equal(update?.action, 'manual')
     assert.ok(!scan.findings.some(f => f.path.endsWith('hiberfil.sys')))
@@ -149,14 +149,14 @@ describe('classification (PLAN.md §5)', () => {
       candidate({ kind: 'installer', path: `${PROFILE}\\Downloads\\b.exe`, bytes: 200 }),
       candidate({ kind: 'installer', path: 'C:\\Program Files\\x\\c.exe', bytes: 50 }),
     ]
-    const scan = classifyScan(walk(cands), null, c)
+    const scan = classifyScan({ walk: walk(cands), windows: null }, c)
     const inst = scan.totals.find(t => t.category === 'installer' && t.class === 'review')
     assert.deepEqual([inst?.count, inst?.bytes, inst?.isCapped], [2, 300, true])
     assert.equal(scan.findings[0]?.category, 'user_temp') // largest first
   })
   it('a duplicate candidate path is listed once', () => {
     const a = candidate({ kind: 'installer', path: `${PROFILE}\\Downloads\\a.exe` })
-    const scan = classifyScan(walk([a, { ...a, path: a.path.toUpperCase() }]), null, c)
+    const scan = classifyScan({ walk: walk([a, { ...a, path: a.path.toUpperCase() }]), windows: null }, c)
     assert.equal(scan.findings.filter(f => f.category === 'installer').length, 1)
   })
 })
@@ -198,7 +198,7 @@ describe('reports', () => {
     assert.ok(text.startsWith('\uFEFF'))
     assert.ok(text.includes('\r\n'))
   })
-  it('writes the four M1 files', () => {
+  it('writes the audit files', () => {
     const c = ctx()
     const w = walk([candidate({ kind: 'archive', path: `${PROFILE}\\Downloads\\a|b.zip` })])
     const files = buildReports({
@@ -213,7 +213,7 @@ describe('reports', () => {
       volume: volume(),
       walk: w,
       windows: windows(),
-      classified: classifyScan(w, windows(), c),
+      classified: classifyScan({ walk: w, windows: windows() }, c),
       recommendations: windowsRecommendations(volume(), windows()),
       ctx: c,
     })
@@ -222,6 +222,8 @@ describe('reports', () => {
       'largest_files.csv',
       'installers_and_archives.csv',
       'cleanup_recommendations.md',
+      'cache_analysis.md',
+      'duplicate_files.csv',
     ])
     const largest = files[1]?.text ?? ''
     assert.ok(largest.includes('"C:\\pagefile.sys"') && largest.includes('"protected"'))
