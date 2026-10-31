@@ -1,7 +1,7 @@
 {
   "name": "drive-cleanup",
-  "version": "0.1.0",
-  "description": "Deep C: drive audit and cleanup for Windows: largest files, duplicates by SHA-256, old installers and archives, developer caches, leftovers. Scans only read; files you approve are moved to a restorable quarantine. In development: see PLAN.md.",
+  "version": "0.2.0-beta.1",
+  "description": "Deep C: drive audit for Windows: where the space went, old installers and archives, crash dumps, old logs, large old files and Windows-managed space, classified safe / review / protected with reports. Read-only preview; approval and restorable quarantine come next.",
   "author": {
     "name": "Techgramam"
   },
@@ -12,5 +12,6 @@
     "cleanup",
     "duplicates",
     "quarantine"
-  ]
+  ],
+  "types": "./types/index.d.ts"
 }

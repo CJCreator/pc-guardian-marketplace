@@ -3,7 +3,7 @@
 | | |
 | --- | --- |
 | Plugin | `drive-cleanup` (marketplace `techgramam`) |
-| Status | **Planned.** Version 0.1.0 is the empty plugin plus this plan; nothing runs yet. |
+| Status | **M1 built, not yet run on Windows.** 0.2.0-beta.1 holds the read-only deep audit; see §13 for what remains before 0.2.0. |
 | First usable release | 0.2.0 (milestone M1: read-only deep audit and reports) |
 | Feature-complete release | 1.0.0 (M1 to M6) |
 | Platform | Windows 10 and 11, 64-bit, Claude Code 2.1.312 or later, no administrator rights needed |
@@ -179,7 +179,7 @@ Claude Code session
 The flow is one-way: **scan → classify → person ticks and confirms → act → verify**. Claude sits beside it
 and can start scans and read results, never act.
 
-### 3.1 Source layout (in the source monorepo)
+### 3.1 Source layout (planned for a source monorepo)
 
 ```
 packages/
@@ -201,7 +201,13 @@ packages/
   drive-cleanup-ps/        ps/ scripts + Pester tests + fixture-drive builder
 ```
 
-### 3.2 Built plugin layout (this folder, from release 0.2.0)
+### 3.2 Plugin layout (this folder)
+
+**As built in M1**, the source lives in this folder; there is no separate build. The hooks module and core
+are TypeScript the engine loads directly, `hooks/core/` holds the pure logic (no engine calls), and
+`dev/` holds the developer tools: `dev/update-hashes.mjs` records the scripts' SHA-256 in
+`hooks/script-hashes.ts`, and `dev/test/*.spec.ts` are the core's unit tests (Node). `tests/` holds the
+engine tests run by `claude plugin test`. The layout planned for a build:
 
 ```
 plugins/drive-cleanup/
@@ -244,7 +250,7 @@ fails or times out shows **Retry** and does not stop the other steps.
 | --- | --- | --- | --- | --- |
 | 1 Volume | `scan/volume.ps1` | Fixed drives (capacity, used, free, file system, media type, health), Storage Sense policy, NTFS last-access setting, elevation | 20 s | Drives; whether C: is the system drive; candidate quarantine drives; `lastAccessTrusted` |
 | 2 Walk | `scan/walk.ps1` | One metadata walk of C: (name, size, size on disk, created, modified, accessed, attributes, file ID). Protected roots are summed but their contents are not listed. | 4 min or 3 M entries | Folder tree sizes to depth 4; top 100 largest files; age buckets; per-extension totals; empty folders in user areas; project roots |
-| 3 Candidates | `scan/candidates.ps1` | Only the folders the classifier selected from step 2's results, passed as a list id (§4.2); no second full walk | 30 s | Installers, archives, extracted-archive pairs, logs, dumps, temp folders, old downloads, large old files |
+| 3 Candidates | *(in `scan/walk.ps1`, see §4.2)* | Collected during the walk itself, in this user's areas only | — | Installers, archives, extracted-archive pairs, logs, dumps, temp folders, old downloads, large old files, empty folders |
 | 4 Dev caches | `scan/dev-caches.ps1` | Fixed list of known cache roots (§5) plus the project build caches found in step 2; running processes | 60 s | One record per cache: tool, path, size, files, last write, whether the tool is running |
 | 5 Leftovers | `scan/leftovers.ps1` | Installed programs (Uninstall keys, HKLM and HKCU, read only; Store packages via `Get-AppxPackage` for the current user) compared with folders in `%APPDATA%`, `%LOCALAPPDATA%` and `%LOCALAPPDATA%\Programs` | 30 s | Unmatched folders with size and last write, always class B, low confidence |
 | 6 Duplicates (opt-in) | `scan/hash.ps1` | File contents, only for size collisions (§6) | 10 min, resumable | Duplicate groups |
@@ -265,14 +271,13 @@ fails or times out shows **Retry** and does not stop the other steps.
 
 ### 4.2 Passing data between steps without writing from scripts
 
-Scan scripts never write files (S1). Large results come back as **pages**: the script takes
-`DC_PAGE` and `DC_PAGE_SIZE` (validated integers) and a `DC_SCAN_ID`, and returns that page. The mod stores
-the pages in the data folder through the safe writer. Steps that need step 2's index (candidates,
-leftovers, hash) re-derive what they need from a narrow re-walk of the folders the classifier selected.
-The mod passes those folders as a **list id**, which the script reads from
-`scans\<scanId>\lists\<listId>.json` (read-only for the script, written by the safe writer).
-*(Decision D2: paging, as planned, versus letting scan scripts stream NDJSON into a folder the mod
-pre-creates. Paging keeps S1 absolute.)*
+Scan scripts never write files (S1). **As built in M1:** the walk collects cleanup candidates in the same
+pass, so no step needs another step's output and nothing is paged. Every list is capped in the script
+(100 largest files, the 1,000 largest candidates of each kind, 1,500 folders, 200-entry samples) while
+totals stay exact, and the report says when a list holds only the largest items. The whole output stays
+under 4 MB, below both the engine's 4 MiB stdout limit and `$.fs.read`'s 4 MiB limit, so the mod stores
+it as printed. This keeps D2's goal (scans never write) with less machinery than paging. Paging, by
+`DC_PAGE` and `DC_PAGE_SIZE` inputs, stays the fallback if real drives hit the caps often.
 
 ### 4.3 Output schemas (summary)
 
@@ -633,22 +638,33 @@ Estimates are engineer-days for one engineer familiar with the PC Guardian codeb
 
 - [x] Plugin folder, manifest, marketplace entry, README, this plan.
 
-### M1: Read-only deep audit (0.2.0), about 15 days
+### M1: Read-only deep audit (0.2.0), built as 0.2.0-beta.1
 
-- [ ] Extract `win-safe-runtime` from PC Guardian (runner, writer, CSV, dashboard server); PC Guardian
-      switches to it with no behaviour change (its own tests prove it).
-- [ ] Core: schemas, step model, progress, protected-path matcher (§2.2) with tests for every rule.
-- [ ] Scripts: `scan/volume.ps1`, `scan/walk.ps1` (paged), `scan/candidates.ps1`, `scan/windows.ps1`.
-- [ ] Classifier for every category except duplicates, dev caches and leftovers.
-- [ ] Mod: `register.tsx`, `scan.ts`, `findings.ts`, `reports.ts`; tools `self_check`, `run_deep_scan`,
-      `get_scan_status`, `get_storage_summary`, `get_largest_files`, `get_findings`,
-      `get_windows_recommendations`, `generate_audit_reports`.
-- [ ] Reports: `storage_audit.md`, `largest_files.csv`, `installers_and_archives.csv`,
-      `cleanup_recommendations.md`.
-- [ ] Pane with progress, Cancel and Retry. Skills `audit`, `report`, `self-check`, `drive-audit`; agent.
-- **Exit:** recorded fixtures from at least two real PCs; a full scan of a 500 GB SSD with 1.5 M files in
-  under 4 min; a Process Monitor capture shows no writes outside the data folder and no reads of contents;
-  junction, placeholder and long-path fixtures pass.
+- [x] Runtime (D1): a process runner and safe writer of the plugin's own (`hooks/safe-shell.ts`,
+      `hooks/safe-writer.ts`), following PC Guardian's design. PC Guardian's source is not in this
+      repository, so the shared package waits for the source monorepo.
+- [x] Core: strict output schemas (`hooks/core/validate.ts`), step model and progress, protected-path
+      matcher (§2.2, `hooks/core/paths.ts`) with a test for each rule.
+- [x] Scripts: `scan/volume.ps1`, `scan/walk.ps1` (candidates collected in the same pass, §4.2),
+      `scan/windows.ps1`.
+- [x] Classifier for every category except duplicates, dev caches and leftovers (`hooks/core/classify.ts`);
+      Windows recommendations (`hooks/core/recommend.ts`).
+- [x] Mod: `register.tsx`, `scan.ts`, `tools.ts`; tools `self_check`, `run_deep_scan`, `get_scan_status`,
+      `get_storage_summary`, `get_largest_files`, `get_findings`, `get_windows_recommendations`,
+      `generate_audit_reports`, `open_pane`.
+- [x] Reports: `storage_audit.md`, `largest_files.csv`, `installers_and_archives.csv`,
+      `cleanup_recommendations.md` (`hooks/core/reports.ts`).
+- [x] Pane with progress, Cancel (between steps) and Retry. Skills `audit`, `report`, `self-check`,
+      `drive-audit`; agent `drive-auditor`.
+- [x] Tests: 58 core unit tests (`node --experimental-strip-types --test dev/test/*.spec.ts`) and 5 engine
+      tests (`claude plugin test`), type-checked against the engine's declarations.
+- [ ] **Run on Windows.** The PowerShell scripts were written for Windows PowerShell 5.1 but have not run
+      yet: the build environment had no PowerShell. Run `/drive-cleanup:self-check` and
+      `/drive-cleanup:audit` on at least two real PCs, fix what breaks, and record their output
+      (anonymised) as test fixtures in place of the hand-made ones in `dev/test/fixtures.ts`.
+- **Exit (open):** recorded fixtures from at least two real PCs; a full scan of a 500 GB SSD with 1.5 M
+  files in under 4 min; a Process Monitor capture shows no writes outside the data folder and no reads of
+  contents; junction, placeholder and long-path fixtures pass. Then release 0.2.0.
 
 ### M2: Developer caches and leftovers (0.3.0), about 6 days
 
@@ -741,8 +757,8 @@ Total: about 50 engineer-days.
 
 | Id | Question | Recommendation |
 | --- | --- | --- |
-| D1 | Share runtime code with PC Guardian as an internal package, or copy it? | Shared internal package, bundled into each plugin; no runtime dependency between plugins |
-| D2 | Large scan output: paging (scripts never write) or scripts streaming into a run folder? | Paging, so "scans only read" stays absolute |
+| D1 | Share runtime code with PC Guardian as an internal package, or copy it? | Shared internal package, bundled into each plugin. **M1:** own copy of the design, until a source monorepo exists |
+| D2 | Large scan output: paging (scripts never write) or scripts streaming into a run folder? | Scripts never write. **M1:** capped lists in one pass (§4.2); paging if real drives need it |
 | D3 | Quarantine retention | Kept until the person purges; reminder after 30 days |
 | D4 | Class A items: delete, or quarantine too? | Delete (they are re-created by their programs), labelled "Delete permanently" on the review screen |
 | D5 | Antigravity cache paths | Confirm on a real install before M2 ships |
