@@ -29,4 +29,4 @@ plugins/drive-cleanup/            Drive Cleanup
 
 Each plugin keeps its own `LICENSE`, `CHANGELOG.md` and README.
 
-Copyright (c) 2026 Techgramam.
+Copyright (c) 2026 Techgramam. Proprietary; see [LICENSE](LICENSE).
