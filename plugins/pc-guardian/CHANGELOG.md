@@ -4,6 +4,12 @@ All notable changes to PC Guardian AI. The format follows [Keep a Changelog](htt
 
 ## [Unreleased]
 
+## [2.0.1] - 2026-10-31
+
+### Changed
+
+- **PC Guardian now lives in `plugins/pc-guardian/`** of the marketplace repository, beside the other plugins. Nothing it does changes, and history and settings carry over. Its installed copy no longer includes other plugins' files.
+
 ## [2.0.0] - 2026-10-30
 
 PC Guardian now works only with this PC's own data. A major version because it removes a capability (demo mode) that tools, settings and requests offered.
