@@ -22,7 +22,7 @@ const progressAtom = atom({ plugin: 'drive-cleanup', key: 'progress' } as const,
   shape: 'progress-1',
 })
 const summaryAtom = atom({ plugin: 'drive-cleanup', key: 'summary' } as const, null, {
-  shape: 'summary-1',
+  shape: 'summary-2',
 })
 
 const TAB_LABEL = { overview: 'Overview', review: 'Choose items', quarantine: 'Undo', settings: 'Settings' } as const
@@ -74,10 +74,21 @@ async function toggleDuplicates($: EngineInterface): Promise<void> {
   }
 }
 
+/** Starts a scan from a press; a refusal (a scan or a cleanup running) is shown, not lost. */
+function scanFromPane($: EngineInterface, only?: Parameters<typeof startScan>[1]): void {
+  void (async () => {
+    const outcome = await startScan($, only)
+    if (outcome.status === 'refused') await setActivity($, { state: 'idle', message: outcome.message })
+  })().catch(() => {})
+}
+
 /** One press: every cache and temporary file selected (not the Recycle Bin), then the usual confirmation. */
 async function cleanSafeItems($: EngineInterface): Promise<void> {
   const scan = await loadLatestScan($)
-  if (scan === undefined) return
+  if (scan === undefined) {
+    await setActivity($, { state: 'idle', message: 'There is no scan to clean from. Press Run deep scan first.' })
+    return
+  }
   if (!(await ensureCleanupOn($))) return
   // Never the Recycle Bin: those are the person's own files, emptied only when they pick it.
   const ids = scan.classified.findings
@@ -214,6 +225,10 @@ export const register: Register = on => {
               <Text dimColor>
                 Windows itself: {sizeText(summary.recoverable.manualBytes)} (ask Claude, or Windows Settings)
               </Text>
+              <Text dimColor>
+                Recycle Bin: {sizeText(summary.recoverable.binBytes)} (only when you pick it); developer tools by hand:{' '}
+                {sizeText(summary.recoverable.devManualBytes)}
+              </Text>
               {summary.top.map(t => (
                 <Text dimColor>
                   • {t.label}: {sizeText(t.bytes)} ({String(t.count)})
@@ -249,7 +264,7 @@ export const register: Register = on => {
                       key={`retry-${s.id}`}
                       label={s.id === 'hash' && s.state === 'ok' ? 'Continue duplicate search' : `Retry ${s.label}`}
                       onPress={() => {
-                        void startScan($, s.id).catch(() => {})
+                        scanFromPane($, s.id)
                       }}
                     />
                   ))}
@@ -270,7 +285,7 @@ export const register: Register = on => {
                 label={summary === null ? 'Run deep scan' : 'Scan again'}
                 variant={summary === null ? 'primary' : undefined}
                 onPress={() => {
-                  void startScan($).catch(() => {})
+                  scanFromPane($)
                 }}
               />
             )}

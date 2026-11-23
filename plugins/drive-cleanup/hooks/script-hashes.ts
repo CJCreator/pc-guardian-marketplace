@@ -2,16 +2,16 @@
 // script under ps/ (BOM removed, LF line ends). A script whose hash does not
 // match is never run.
 export const SCRIPT_HASHES: Readonly<Record<string, string>> = {
-  'actions/apply.ps1': 'e94506622208017c7957f5c023052fa1ac1db5cf529ea7a0ee598239c8decbdb',
-  'actions/clean-cache.ps1': '8e7c3a791377c352d20d15c7aff7d54be042d4f4a5bcceb34bfb1ffa416f35b0',
+  'actions/apply.ps1': '323c1c7cd3a760a2dac951e300ddd15c3d0f65b282fab96c51365c34b32123b3',
+  'actions/clean-cache.ps1': 'f8d44fd6c066a72885632c953f9ad3df5b194729914a0a4ccc44f090e0ae9872',
   'actions/elevated.ps1': '23ff08e0fd48684fe42dbdb26de878af0d9436f64ad2945ba1808c718eefbc17',
-  'actions/purge.ps1': '41c179321723883b836c45cb41096ec8901bfe9532343bd73a709ef5ccf1f0b4',
-  'actions/restore.ps1': 'de881bbafb86516bf656e02bd7e40dde5db82e9595a5d4e30bf663cdef1944d2',
-  'scan/dev-caches.ps1': '6dae26c7e48361ff4b04f6b3fce43054effaeab4db30ac654ea6ae7922c6d07e',
-  'scan/hash.ps1': 'f5679b37e84ffdd34324af07dc18e2d31c3276aa4ad4398e11dffe96b7ac2b1a',
+  'actions/purge.ps1': '33f182f308f65afb3e8ac1c90357baa009a9b8f578f602ad4dfef7329c5ad10a',
+  'actions/restore.ps1': '0e7bde5fd68a48cc95da08d2430ba81352a23fcd65709ed8f9f227f731269306',
+  'scan/dev-caches.ps1': '5eb2c7cc6c85c89a785e317507d6624d63c83c114220a2c05da5cd117af1d1df',
+  'scan/hash.ps1': 'e030660d4525cbf7aff7d0841d4ff8049ab3611fd738ac0f0125bd26e05a52cb',
   'scan/leftovers.ps1': 'f2f4b83cf47507a388c545281027b253865c3ff8189cea1271e9c5985731ba21',
-  'scan/verify.ps1': '230be5dcfa736e171c2201622eec30b67b093161307c0ba3dd4cf2c1b9fc1256',
+  'scan/verify.ps1': 'd424af227daa677c41eb13a1f7586cb9162c61cd32e9589302465a8e8984f025',
   'scan/volume.ps1': '737d71c7c7e0aa7203cbf3cd48c4a289d01ab8a26e98a8fcc322f12e3d1a5e90',
-  'scan/walk.ps1': '7000585b39a91bb86fccfa99442590c0bde357a2980c100d29e7b2062b6cede8',
+  'scan/walk.ps1': '8a0ed3ddfc46ae260618f97ba78b6c34307d6e94af6938df17a3422a06d8af55',
   'scan/windows.ps1': 'baaf598a9fb7e74bf0533757cd2a95a3ca40500d2f90215ae52df93575d021e5',
 }

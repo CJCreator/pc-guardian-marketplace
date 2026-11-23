@@ -180,6 +180,7 @@ export const RawWalkCheck: Check<RawWalk> = obj({
   entryCount: int,
   deniedFolders: int,
   deniedSample: list(str, WALK_LIMITS.samples),
+  nodeModules: list(obj({ path: str, bytes: num, fileCount: int, modifiedUtc: isoTime }), 200),
   longPathFolders: int,
   longPathSample: list(str, WALK_LIMITS.samples),
   linkedFolders: int,
@@ -271,6 +272,7 @@ export const RawHashCheck: Check<RawHash> = obj({
   filesHashed: int,
   bytesHashed: num,
   skippedLocked: int,
+  skippedTooBig: nullable(int),
   skippedCloud: int,
   groups: list(
     obj({
@@ -287,7 +289,10 @@ export const RawVerifyCheck: Check<RawVerify> = obj({
   isElevated: bool,
   tools: list(obj({ id: str, status: oneOf(['ok', 'not_found', 'failed'] as const), version: str }), 16),
   projects: list(obj({ path: str, exists: bool, hasGit: bool }), 500),
-  quarantine: list(obj({ runId: str, checked: int, matched: int, missing: int, mismatched: int }), 500),
+  quarantine: list(
+    obj({ runId: str, checked: int, matched: int, missing: int, mismatched: int, notHashed: nullable(int) }),
+    500,
+  ),
 })
 
 const refused = obj({ status: oneOf(['refused'] as const), reason: str, detail: str })
@@ -320,7 +325,13 @@ const either =
 export const RawApplyCheck: Check<RawApply> = either(applyOk, refused)
 
 export const RawCacheCleanCheck: Check<RawCacheClean> = either(
-  obj({ status: oneOf(['ok'] as const), removedCount: int, removedBytes: num, skippedCount: int }),
+  obj({
+    status: oneOf(['ok'] as const),
+    removedCount: int,
+    removedBytes: num,
+    skippedCount: int,
+    isTruncated: nullable(bool),
+  }),
   refused,
 )
 

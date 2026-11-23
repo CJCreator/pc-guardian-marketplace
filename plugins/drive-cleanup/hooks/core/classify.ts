@@ -210,7 +210,7 @@ export function classifyCandidate(c: RawCandidate, ctx: ClassifyContext): Findin
         category: 'build_cache',
         class: 'review',
         action: 'quarantine',
-        reason: `Build cache inside the project ${parentPath(parentPath(c.path))}, last written ${age} ago. Its tool rebuilds it (the next build is slower once). Nothing else in the project is touched.`,
+        reason: `Build cache inside the project ${/\\(cache|\.vite)$/i.test(c.path) ? parentPath(parentPath(c.path)) : parentPath(c.path)}, last written ${age} ago. Its tool rebuilds it (the next build is slower once). Nothing else in the project is touched.`,
         evidence: { rule: 'project_build_cache', values },
         confidence: 'medium',
       })
@@ -419,7 +419,12 @@ export type ScanInputs = {
 export type Classified = {
   findings: Finding[]
   totals: CategoryTotal[]
-  recoverable: { safeBytes: number; reviewBytes: number; manualBytes: number }
+  /**
+   * safe: caches and temporary files (not the Recycle Bin); bin: the Recycle Bin;
+   * review: the person's own files; manual: Windows-managed space; devManual:
+   * developer caches cleaned by hand (pnpm, Gradle, Maven, Docker, …).
+   */
+  recoverable: { safeBytes: number; binBytes: number; reviewBytes: number; manualBytes: number; devManualBytes: number }
 }
 
 const CATEGORY_ORDER: readonly CategoryId[] = [
@@ -503,15 +508,21 @@ export function classifyScan(inputs: ScanInputs, ctx: ClassifyContext): Classifi
   }
 
   let safeBytes = 0
+  let binBytes = 0
   let reviewBytes = 0
   let manualBytes = 0
+  let devManualBytes = 0
   for (const f of findings) {
     if (f.action === 'none') continue
-    if (f.action === 'manual') manualBytes += f.bytes
+    if (f.action === 'manual') {
+      // Windows' own space and developer tools' are different jobs: never one total.
+      if (f.category === 'windows_managed') manualBytes += f.bytes
+      else devManualBytes += f.bytes
+    } else if (f.category === 'recycle_bin') binBytes += f.bytes
     else if (f.class === 'safe') safeBytes += f.bytes
     else if (f.class === 'review') reviewBytes += f.bytes
   }
-  return { findings, totals, recoverable: { safeBytes, reviewBytes, manualBytes } }
+  return { findings, totals, recoverable: { safeBytes, binBytes, reviewBytes, manualBytes, devManualBytes } }
 }
 
 export const CATEGORY_LABEL: Record<CategoryId, string> = {
@@ -527,7 +538,7 @@ export const CATEGORY_LABEL: Record<CategoryId, string> = {
   empty_folder: 'Empty folders',
   build_cache: 'Project build caches',
   dev_cache_safe: 'Developer caches',
-  dev_cache_review: 'Developer caches (manual)',
+  dev_cache_review: 'Caches cleaned by hand',
   browser_cache: 'Browser caches',
   recycle_bin: 'Recycle Bin',
   leftover: 'App leftovers',

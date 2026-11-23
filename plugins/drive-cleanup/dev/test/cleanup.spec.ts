@@ -777,9 +777,30 @@ describe('one-confirm proposals (§19)', () => {
   const keeper = fs.find(f => f.duplicate?.isSuggestedKeeper === true) as Finding
   const copies = fs.filter(f => f.duplicate !== undefined && f.duplicate.isSuggestedKeeper !== true)
 
-  it('needs ids or filters, not both and not neither', () => {
+  it('needs ids or filters; takes the union of both', () => {
     assert.equal(selectForProposal(fs, {}).status, 'refused')
-    assert.equal(selectForProposal(fs, { findingIds: [npm.id], classes: ['safe'] }).status, 'refused')
+    const dupe = copies[0] as Finding
+    const both = selectForProposal(fs, { findingIds: [dupe.id], classes: ['safe'] }) as {
+      status: string
+      ids: string[]
+    }
+    assert.equal(both.status, 'ok')
+    assert.ok(both.ids.includes(dupe.id) && both.ids.includes(npm.id), 'named items plus every safe item')
+  })
+  it('a target counts only what frees the system drive, re-creatable data first', () => {
+    const dupe = copies[0] as Finding
+    const other = copies.find(c => c.id !== dupe.id)
+    const sel = selectForProposal(
+      fs,
+      { findingIds: [dupe.id], classes: ['safe', 'review'], maxBytes: 1024 ** 4 },
+      { quarantineFreesSpace: false },
+    ) as { ids: string[] }
+    assert.ok(sel.ids.includes(dupe.id), 'a named move stays')
+    if (other !== undefined) assert.ok(!sel.ids.includes(other.id), 'moves matched by a filter add nothing on C:')
+    assert.equal(
+      sel.ids[0],
+      fs.filter(f => f.action === 'delete' && isActionable(f)).toSorted((a, b) => b.bytes - a.bytes)[0]?.id,
+    )
   })
   it('refuses the whole proposal when a named item is protected, a keeper or unknown', () => {
     const prot: Finding = { ...npm, id: 'p', class: 'protected', protectedBy: 'Windows folder' }
@@ -1131,5 +1152,56 @@ describe('open gaps closed (1.6)', () => {
   it('reports long paths as not read', () => {
     const w = { ...walk(), longPathFolders: 3, longPathSample: ['C:\\Users\\Asha\\deep'] }
     assert.equal(RawWalkCheck(w, 'walk').longPathFolders, 3)
+  })
+})
+
+describe('second review fixes (1.7)', () => {
+  it('apply.ps1 keeps protected files inside folders it deletes or moves, and records a move before originals go', () => {
+    const apply = ps('actions/apply.ps1')
+    assert.match(apply, /if \(\$null -ne \(Get-NameReason \$child\.FullName \$isDir\)\) \{ \$kept\+\+; continue \}/)
+    assert.match(apply, /It contains a protected item/)
+    assert.match(apply, /state = 'moving'/)
+    assert.match(apply, /\[System\.IO\.File\]::Replace\(\$temp, \$target, \$null\)/)
+    assert.match(apply, /belongs to another account/)
+    assert.match(apply, /'PerfLogs'/)
+    assert.ok(
+      apply.indexOf("state = 'moving'") < apply.indexOf('[System.IO.File]::Delete($f)'),
+      'recorded before any original is removed',
+    )
+  })
+  it('restore.ps1 resolves paths, checks owners, merges a cut-short move and copies under a temporary name', () => {
+    const restore = ps('actions/restore.ps1')
+    assert.match(restore, /GetFullPath\(\[string\]\$item\.destination\)/)
+    assert.match(restore, /GetFullPath\(\[string\]\$item\.original\)/)
+    assert.match(restore, /belongs to another account/)
+    assert.match(restore, /\$merge = \$state -eq 'moving'/)
+    assert.match(restore, /\.dc-restore/)
+    assert.match(restore, /Documents\\WindowsPowerShell/)
+  })
+  it('scripts stop in time and say so', () => {
+    assert.match(ps('actions/clean-cache.ps1'), /isTruncated  = \$isTruncated/)
+    assert.match(ps('actions/clean-cache.ps1'), /function Test-Keep/)
+    assert.match(ps('scan/verify.ps1'), /notHashed/)
+    assert.match(ps('scan/hash.ps1'), /skippedTooBig/)
+    assert.match(ps('scan/dev-caches.ps1'), /\$overallMs = 300000/)
+    assert.match(ps('actions/purge.ps1'), /belongs to another account/)
+  })
+  it('the new caches are measured by the script that the table names', () => {
+    const script = ps('scan/dev-caches.ps1')
+    for (const id of [
+      'ollama_models',
+      'huggingface',
+      'iphone_backups',
+      'cargo_registry',
+      'jetbrains_caches',
+      'cursor_cache',
+    ]) {
+      assert.match(script, new RegExp(`id = '${id}'`), id)
+      assert.ok(
+        DEV_CACHES.some(c => c.id === id),
+        id,
+      )
+    }
+    assert.match(ps('actions/clean-cache.ps1'), /cursor_cache\s+=/)
   })
 })

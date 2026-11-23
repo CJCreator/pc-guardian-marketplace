@@ -25,7 +25,7 @@ export type DcSummary = {
   scanId: string
   createdAt: string
   drive: { letter: string; totalBytes: number; freeBytes: number } | null
-  recoverable: { safeBytes: number; reviewBytes: number; manualBytes: number }
+  recoverable: { safeBytes: number; binBytes: number; reviewBytes: number; manualBytes: number; devManualBytes: number }
   top: { label: string; className: string; bytes: number; count: number }[]
   isPartial: boolean
   lastAuditFolder: string | null

@@ -43,7 +43,7 @@ const progressAtom = atom({ plugin: 'drive-cleanup', key: 'progress' } as const,
   shape: 'progress-1',
 })
 const summaryAtom = atom({ plugin: 'drive-cleanup', key: 'summary' } as const, null, {
-  shape: 'summary-1',
+  shape: 'summary-2',
 })
 
 export const PANE_ID = 'drive-cleanup'
@@ -356,7 +356,10 @@ export async function loadLatestScan($: EngineInterface): Promise<LoadedScan | u
     done,
     ctx,
     classified: classifyScan({ walk, windows, devcaches, leftovers, hash, done }, ctx),
-    recommendations: [...windowsRecommendations(volume, windows), ...spaceRecommendations({ volume, walk, devcaches })],
+    recommendations: [
+      ...windowsRecommendations(volume, windows, walk),
+      ...spaceRecommendations({ volume, walk, devcaches, nowMs: Date.parse(meta.finishedAt) || Date.now() }),
+    ],
   }
   cached = scan
   return scan

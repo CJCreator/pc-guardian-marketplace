@@ -72,6 +72,9 @@ $projects = foreach ($p in @($list.projects)) {
 }
 
 $sha = [System.Security.Cryptography.SHA256]::Create()
+# Hashing tens of GB takes long: past this, files are only checked to be there.
+$hashWatch = [System.Diagnostics.Stopwatch]::StartNew()
+$hashBudgetMs = 420000
 $quarantine = foreach ($q in @($list.quarantine)) {
     $runId = [string]$q.runId
     $root = [string]$q.root
@@ -79,11 +82,12 @@ $quarantine = foreach ($q in @($list.quarantine)) {
     $matched = 0
     $missing = 0
     $mismatched = 0
+    $notHashed = 0
     $restorePath = Join-Path (Join-Path $root $runId) 'restore.json'
     if ([System.IO.File]::Exists($restorePath)) {
         $restore = [System.IO.File]::ReadAllText($restorePath) | ConvertFrom-Json
         foreach ($item in @($restore.items)) {
-            if ([string]$item.state -ne 'quarantined') { continue }
+            if ([string]$item.state -ne 'quarantined' -and [string]$item.state -ne 'moving') { continue }
             $checked++
             $dest = [string]$item.destination
             if ([bool]$item.isFolder) {
@@ -92,6 +96,7 @@ $quarantine = foreach ($q in @($list.quarantine)) {
             }
             if (-not [System.IO.File]::Exists($dest)) { $missing++; continue }
             if (-not $item.sha256) { $matched++; continue }
+            if ($hashWatch.ElapsedMilliseconds -ge $hashBudgetMs) { $matched++; $notHashed++; continue }
             $share = [System.IO.FileShare]::ReadWrite -bor [System.IO.FileShare]::Delete
             # A file that cannot be opened (locked, gone meanwhile) counts as missing, not as the end of the check.
             try {
@@ -110,7 +115,7 @@ $quarantine = foreach ($q in @($list.quarantine)) {
     } else {
         $missing++
     }
-    [pscustomobject]@{ runId = $runId; checked = $checked; matched = $matched; missing = $missing; mismatched = $mismatched }
+    [pscustomobject]@{ runId = $runId; checked = $checked; matched = $matched; missing = $missing; mismatched = $mismatched; notHashed = $notHashed }
 }
 $sha.Dispose()
 

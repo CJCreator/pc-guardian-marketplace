@@ -4,6 +4,35 @@ All notable changes to Drive Cleanup. The format follows [Keep a Changelog](http
 
 ## [Unreleased]
 
+## [1.7.0-beta.1] - 2026-11-23
+
+Fixes from a second end-to-end review, better advice, and more of what fills C:. Still not run on Windows: see TESTING.md §12.
+
+### Fixed
+
+- **Protected files inside a folder**: cleaning an old Temp folder (or emptying Temp) kept keys, password and other databases, `.env` and credential files, and anything in `.git` or `.ssh` found inside; a folder holding one is never moved to quarantine.
+- **`/drive-cleanup:free-space` built proposals the tool refused**: `propose_cleanup` now takes named items and categories/classes together (their union). Caches and temporary files come first; with a target, only what frees C: counts.
+- **The deletion manifest could be overwritten** when it could not be read (over 4 MB, or non-ASCII paths): it is rotated by bytes at 3 MB, and one that cannot be read is never overwritten.
+- **Undo could lose track of moved files**: a folder moving to another drive is recorded before any original goes (and Restore merges back a move that was cut short); `restore.json` is replaced atomically; every run still in quarantine stays in the run list however old; save failures are reported.
+- **Restore** resolves paths before checking them, refuses the same places cleaning does (other profiles, Windows and app data, PowerShell profiles, Startup, `.ssh`, …), refuses quarantine folders owned by another account, and copies back under a temporary name so a stop never leaves a half file. The quarantine root gets locked-down rights and must be yours.
+- **Scripts that could run past their time limit** now stop and say so: restore, verify (hashes up to 7 minutes, then checks presence), cache cleaning, moving a big file on the same drive, the first duplicate group (skipped and counted when too big).
+- **Restore and purge stopped without a report** now say what is left and update the size; purge refuses a run already put back; a partial purge lowers the size left.
+- **Totals**: "Windows itself" no longer includes developer caches cleaned by hand; "Safe to clean" and the **Clean safe items** button no longer include the Recycle Bin (shown on its own line).
+- Refused pane presses (scan, retry, restore, delete during a cleanup) now say why; "Let me choose" when the pane cannot open says so instead of "stopped unexpectedly".
+- `apply.ps1` protects PerfLogs and token files in any dot-folder, refuses to quarantine names that Restore would refuse (`~1`), and reports a folder where nothing could be removed as skipped.
+
+### Changed
+
+- **Advice**: compacting WSL/Docker disks with diskpart (Optimize-VHD on Pro) instead of `--set-sparse`; Docker's "Purge data" named for what it does; Windows Update downloads, memory dumps and the hibernation file point to Drive Cleanup's own administrator tasks; restore points through Settings > System > About > System protection; Yarn 2+ (`globalFolder`), the NuGet HTTP cache, Ollama and Hugging Face in the developer-cache move.
+- The dialog's real answers (**Free N GB**, **Let me choose**, **Not now**) everywhere in the docs, skills and tool descriptions.
+- The breakdown goes deeper inside your profile (AppData\Local\<app>, .cache\<tool>).
+
+### Added
+
+- **Caches cleaned by hand**, with the command or setting: Ollama, Hugging Face and LM Studio models; Rust (cargo registry), Go, conda, uv; Android system images and emulators; JetBrains caches; Playwright and Cypress; iPhone and iPad backups; Spotify. **Cursor and Windsurf caches** are cleaned like VS Code's.
+- **Rust `target` folders** as project build caches.
+- **Advice**: uninstall apps and games you don't use (when Program Files is big); `node_modules` of projects not installed into for 6 months (`npx npkill`); apps keeping a lot of data (use the app's own storage settings); Outlook's offline mailbox; the page file.
+
 ## [1.6.0-beta.1] - 2026-11-23
 
 Closes the open gaps of PLAN.md §21.4. Still not run on Windows: see TESTING.md §11.

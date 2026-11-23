@@ -18,7 +18,7 @@ Start a new session.
 | # | Do | Expect |
 | --- | --- | --- |
 | 0.1 | Ask "run Drive Cleanup's self-check" | Windows detected; data folder path; "all 12 match their fingerprints". |
-| 0.2 | Ask Claude "open the Drive Cleanup pane" | Pane beside the chat with Overview / Review / Quarantine / Settings. |
+| 0.2 | Ask Claude "open the Drive Cleanup pane" | Pane beside the chat with Overview / Choose items / Undo / Settings. |
 
 ## 1. Read-only scan (nothing may change)
 
@@ -62,7 +62,7 @@ Then Pane > Settings > Duplicate search > Turn on… (confirm), and run a new de
 
 | # | Expect after the scan |
 | --- | --- |
-| 2.1 | Review > Installers lists `old-setup.exe` (or it is under Duplicate files, with `old-setup (1).exe`). |
+| 2.1 | Choose items > Installers lists `old-setup.exe` (or it is under Duplicate files, with `old-setup (1).exe`). |
 | 2.2 | Archives lists `tool.zip` as "Already-extracted" (a `tool` folder is beside it). |
 | 2.3 | Project build caches lists `proj\.next\cache`; `proj\data.bin` and `.env` are **not** offered anywhere. |
 | 2.4 | Duplicate folders: `Pictures\dc-test-Trip` kept, `Downloads\dc-test\Trip` offered. |
@@ -71,16 +71,16 @@ Then Pane > Settings > Duplicate search > Turn on… (confirm), and run a new de
 
 | # | Do | Expect |
 | --- | --- | --- |
-| 3.1 | Review > Clean selected… with cleanup off | "Cleanup is off" — nothing happens. |
+| 3.1 | Choose items > Clean selected… with cleanup off | "Cleanup is off" — nothing happens. |
 | 3.2 | Settings > Cleanup > Turn on…, then press Escape on the question | Stays off. |
 | 3.3 | Turn on… and confirm | "Cleanup is on". |
-| 3.4 | Select only the fixture items (Show items, tick), Clean selected…, then **Cancel** | "Nothing was changed"; files still there. |
-| 3.5 | Same, confirm **Clean** | Toast with what moved; files gone from `dc-test`; present under `<drive>:\Drive Cleanup Quarantine\<run id>\C\Users\...` with `restore.json`. Moved across drives? Compare a hash: `Get-FileHash`. |
+| 3.4 | Select only the fixture items (Show items, tick), Clean selected…, then **Not now** | "Nothing was changed"; files still there. |
+| 3.5 | Same, confirm **Free N GB** | Toast with what moved; files gone from `dc-test`; present under `<drive>:\Drive Cleanup Quarantine\<run id>\C\Users\...` with `restore.json`. Moved across drives? Compare a hash: `Get-FileHash`. |
 | 3.6 | Before 3.5, open one selected file in an app that locks it (e.g. a zip in 7-Zip) | That item is "skipped: in use"; the rest proceed. |
 | 3.7 | Modify a selected file after the scan, then clean | Skipped: "changed since the scan". |
 | 3.8 | Select a developer cache (e.g. npm) with Node running | Skipped: "Close node first". Close Node, retry: cleaned. |
-| 3.9 | Quarantine > Restore | Files back at their original paths, same hashes; state "Restored". |
-| 3.10 | Clean again, then Quarantine > Delete for good… > confirm | The run folder is gone; space freed. |
+| 3.9 | Undo > Restore | Files back at their original paths, same hashes; state "Restored". |
+| 3.10 | Clean again, then Undo > Delete for good… > confirm | The run folder is gone; space freed. |
 | 3.11 | Open `deletion_manifest.csv` | One row per item per run: path, size, SHA-256, category, reason, action, destination, timestamp. |
 
 ## 4. Verification
@@ -180,6 +180,19 @@ Best on a PC with a second fixed drive (D:) and, if you have it, WSL or Docker D
 | 11.3 | Plug in a USB hard disk with lots of room, quarantine drive on Auto, clean an installer | It goes to an internal drive (or C:), never the USB disk. Settings > quarantine drive set to that letter: it goes there. |
 | 11.4 | Windows account whose folder has an apostrophe (or install Claude Code under such a path), propose `windows_temp` | The Windows permission prompt appears and the task runs. |
 | 11.5 | Restore a run with one item made in use (open in an app), then `/drive-cleanup:quarantine` | The listed size is what is still in quarantine. |
+
+## 12. Second review fixes (1.7)
+
+| # | Do | Expect |
+| --- | --- | --- |
+| 12.1 | Put `test.kdbx` and `.env` inside an old Temp folder (make them 30 days old), clean Temp and old Temp folders | Both files are still there; the rest is gone. |
+| 12.2 | `/drive-cleanup:free-space` asking for caches plus old installers | One dialog with both; no refusal. Buttons read **Free N GB**, **Let me choose**, **Not now**. |
+| 12.3 | On a PC with only C:, `/drive-cleanup:free-space 5 GB` | The plan says your old files would only move on C: (freed when deleted for good); the 5 GB is made of deletions. |
+| 12.4 | Quarantine a folder to D:, kill `powershell.exe` while it removes originals (large folder), then `/drive-cleanup:quarantine restore` | The folder is complete at its original place again. |
+| 12.5 | As another local user, create `D:\Drive Cleanup Quarantine` first; then clean as yourself with quarantine on D: | Refused: the folder belongs to another account. Nothing moved. |
+| 12.6 | Pane > Overview after a scan with a full Recycle Bin and Docker | "Safe to clean" excludes the Recycle Bin; a separate line shows the Recycle Bin and developer tools by hand; "Windows itself" excludes Docker. |
+| 12.7 | `/drive-cleanup:scan` on a PC with Ollama models, iPhone backups or old projects | Those appear with their sizes and the command or setting to use; old projects' node_modules with `npx npkill`. |
+| 12.8 | Press Scan again during a cleanup | The pane says a cleanup is running. |
 
 ## Clean up after testing
 

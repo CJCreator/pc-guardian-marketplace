@@ -122,7 +122,9 @@ describe('space recommendations', () => {
     const recs = spaceRecommendations({ volume: withD(), walk: walkWith([], [vhdx]), devcaches: null })
     const disk = recs.find(r => r.id === 'virtual_disks')
     assert.ok(disk)
-    assert.match(disk.steps.join(' '), /--set-sparse true/)
+    assert.match(disk.steps.join(' '), /compact vdisk/)
+    assert.doesNotMatch(disk.steps.join(' '), /set-sparse/, 'newer WSL disables sparse disks as unsafe')
+    assert.match(disk.steps.join(' '), /deletes every image, container and volume/)
     assert.match(disk.steps.join(' '), /--move D:\\WSL/)
     assert.match(disk.steps.join(' '), /Never delete a \.vhdx/)
     assert.equal(disk.estimatedBytes, null)
@@ -160,5 +162,68 @@ describe('quarantine reminder', () => {
   it('ignores restored and deleted runs', () => {
     const done = [run({ quarantineState: 'restored' }), run({ quarantineState: 'purged' })]
     assert.equal(quarantineRecommendation(done, 'C:', NOW), undefined)
+  })
+})
+
+describe('more advice (1.7)', () => {
+  it('names node_modules of projects not installed into for months', () => {
+    const old = new Date(NOW - 400 * 86_400_000).toISOString()
+    const fresh = new Date(NOW - 5 * 86_400_000).toISOString()
+    const w = {
+      ...walk(),
+      nodeModules: [
+        { path: `${PROFILE}\\src\\old-app\\node_modules`, bytes: 3 * GB, fileCount: 90_000, modifiedUtc: old },
+        { path: `${PROFILE}\\src\\live\\node_modules`, bytes: 4 * GB, fileCount: 90_000, modifiedUtc: fresh },
+      ],
+    }
+    const rec = spaceRecommendations({ volume: volume(), walk: w, devcaches: null, nowMs: NOW }).find(
+      r => r.id === 'old_node_modules',
+    )
+    assert.equal(rec?.estimatedBytes, 3 * GB, 'only the old project')
+    assert.match(rec?.steps.join(' ') ?? '', /npkill/)
+  })
+
+  it('names apps keeping a lot of data, but not caches it already covers', () => {
+    const app = { path: `${PROFILE}\\AppData\\Roaming\\BigChat`, depth: 5, bytes: 9 * GB, fileCount: 100 }
+    const covered = { path: `${PROFILE}\\AppData\\Local\\Spotify`, depth: 5, bytes: 6 * GB, fileCount: 100 }
+    const devcaches = {
+      caches: [
+        {
+          ...cache('spotify_cache', 6 * GB),
+          roots: [
+            {
+              path: `${PROFILE}\\AppData\\Local\\Spotify\\Storage`,
+              status: 'ok' as const,
+              bytes: 6 * GB,
+              fileCount: 1,
+            },
+          ],
+        },
+      ],
+    }
+    const rec = spaceRecommendations({ volume: volume(), walk: walkWith([app, covered]), devcaches }).find(
+      r => r.id === 'big_app_data',
+    )
+    assert.match(rec?.evidence ?? '', /BigChat/)
+    assert.doesNotMatch(rec?.evidence ?? '', /Spotify/)
+  })
+
+  it('moves Ollama and Hugging Face models with their own settings, and Yarn 2 and NuGet completely', () => {
+    const devcaches = {
+      caches: [
+        cache('ollama_models', 20 * GB),
+        cache('yarn_berry', GB),
+        cache('nuget_http', GB),
+        cache('huggingface', 2 * GB),
+      ],
+    }
+    const steps = (
+      spaceRecommendations({ volume: withD(), walk: null, devcaches }).find(r => r.id === 'move_dev_caches')?.steps ??
+      []
+    ).join('\n')
+    assert.match(steps, /OLLAMA_MODELS/)
+    assert.match(steps, /HF_HOME/)
+    assert.match(steps, /globalFolder/)
+    assert.match(steps, /NUGET_HTTP_CACHE_PATH/)
   })
 })

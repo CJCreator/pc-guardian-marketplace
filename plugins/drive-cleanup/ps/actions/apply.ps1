@@ -27,6 +27,8 @@ $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 
 $budgetMs = 540000
+# Inside one item: past this, the item stops (Drive Cleanup kills the script at 600 s).
+$hardStopMs = 570000
 $ignoreCase = [System.StringComparison]::OrdinalIgnoreCase
 $invariant = [System.Globalization.CultureInfo]::InvariantCulture
 $reparsePoint = [System.IO.FileAttributes]::ReparsePoint
@@ -62,7 +64,7 @@ $profilesRoot = Split-Path -Parent $userProfile
 $systemRoot = [System.IO.Path]::GetFullPath([string]$env:SystemRoot).TrimEnd('\')
 $driveRoot = [string]$env:SystemDrive + '\'
 $protectedRoots = [System.Collections.Generic.List[string]]::new()
-foreach ($name in @('Program Files', 'Program Files (x86)', 'ProgramData', 'Recovery', 'System Volume Information', '$Recycle.Bin', '$WinREAgent', '$Windows.~BT', '$Windows.~WS', 'Boot', 'EFI', 'Config.Msi', 'Windows.old')) {
+foreach ($name in @('Program Files', 'Program Files (x86)', 'ProgramData', 'Recovery', 'System Volume Information', '$Recycle.Bin', '$WinREAgent', '$Windows.~BT', '$Windows.~WS', 'Boot', 'EFI', 'Config.Msi', 'PerfLogs', 'Windows.old')) {
     $protectedRoots.Add((Join-Path $driveRoot $name))
 }
 $protectedRoots.Add($systemRoot)
@@ -71,7 +73,7 @@ foreach ($rel in @('AppData\Local\Packages', 'AppData\Roaming\Microsoft', 'AppDa
     $protectedRoots.Add((Join-Path $userProfile $rel))
 }
 $editorCaches = @('Cache', 'CachedData', 'CachedExtensionVSIXs', 'Code Cache', 'GPUCache', 'logs')
-$editors = @('Code', 'Code - Insiders', 'Cursor', 'Antigravity', 'VSCodium')
+$editors = @('Code', 'Code - Insiders', 'Cursor', 'Windsurf', 'Antigravity', 'VSCodium')
 $protectedSegments = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 foreach ($n in @('.ssh', '.gnupg', '.aws', '.azure', '.kube', '.gcloud', '.git', 'drive cleanup quarantine')) { [void]$protectedSegments.Add($n) }
 $credentialNames = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
@@ -115,7 +117,25 @@ function Test-InProject([string]$path) {
 function Test-BuildCache([string]$path) {
     $leaf = [System.IO.Path]::GetFileName($path)
     $parentLeaf = [System.IO.Path]::GetFileName((Split-Path -Parent $path))
-    return ($leaf -eq 'cache' -and $parentLeaf -eq '.next') -or ($leaf -eq '.vite' -and $parentLeaf -eq 'node_modules') -or $leaf -eq '.turbo' -or $leaf -eq '.parcel-cache'
+    $isCargoTarget = $leaf -eq 'target' -and [System.IO.File]::Exists((Join-Path (Split-Path -Parent $path) 'Cargo.toml'))
+    return ($leaf -eq 'cache' -and $parentLeaf -eq '.next') -or ($leaf -eq '.vite' -and $parentLeaf -eq 'node_modules') -or $leaf -eq '.turbo' -or $leaf -eq '.parcel-cache' -or $isCargoTarget
+}
+
+# Rules by name, anywhere: protected folders on the way, and file names and
+# extensions (keys, credentials, databases, drivers). Also used for every file
+# inside a folder before it is deleted or moved.
+function Get-NameReason([string]$path, [bool]$isFolder) {
+    $segments = $path.Split('\')
+    foreach ($segment in $segments) { if ($protectedSegments.Contains($segment)) { return 'a protected folder (' + $segment + ')' } }
+    if ($isFolder) { return $null }
+    $name = [System.IO.Path]::GetFileName($path).ToLowerInvariant()
+    if ($protectedExt.Contains([System.IO.Path]::GetExtension($name))) { return 'a key, certificate, database or system file' }
+    # A token file under AppData or any dot-folder (as in core/paths.ts).
+    $inTokenArea = @($segments | Where-Object { $_ -eq 'AppData' -or ($_.StartsWith('.') -and $_.Length -gt 1) }).Count -gt 0
+    if ($credentialNames.Contains($name) -or ($name.Contains('token') -and $inTokenArea)) { return 'credentials' }
+    if ($path.EndsWith('\.docker\config.json', $ignoreCase)) { return 'credentials' }
+    if ($name -eq '.env' -or $name.StartsWith('.env.') -or $name -match '^id_(rsa|dsa|ecdsa|ed25519)' -or $name -match '^(credentials|secrets?)([._-]|$)') { return 'credentials' }
+    return $null
 }
 
 # The reason a path must not be touched, or $null.
@@ -141,14 +161,8 @@ function Get-ProtectedReason([string]$path, [string]$category, [bool]$isFolder) 
     foreach ($root in $protectedRoots) {
         if ((Test-Under $path $root) -and -not $isWinCache) { return 'a protected location' }
     }
-    foreach ($segment in $path.Split('\')) { if ($protectedSegments.Contains($segment)) { return 'a protected folder (' + $segment + ')' } }
-    if (-not $isFolder) {
-        $name = [System.IO.Path]::GetFileName($path).ToLowerInvariant()
-        if ($protectedExt.Contains([System.IO.Path]::GetExtension($name))) { return 'a key, certificate, database or system file' }
-        if ($credentialNames.Contains($name) -or ($name.Contains('token') -and $isAppData)) { return 'credentials' }
-        if ($path.EndsWith('\.docker\config.json', $ignoreCase)) { return 'credentials' }
-        if ($name -eq '.env' -or $name.StartsWith('.env.') -or $name -match '^id_(rsa|dsa|ecdsa|ed25519)' -or $name -match '^(credentials|secrets?)([._-]|$)') { return 'credentials' }
-    }
+    $byName = Get-NameReason $path $isFolder
+    if ($null -ne $byName) { return $byName }
     if ($category -eq 'build_cache') {
         if (-not (Test-BuildCache $path)) { return 'not a known build cache' }
     } elseif (Test-InProject $path) {
@@ -195,19 +209,32 @@ function Get-Sha256([string]$path) {
 function Get-TreeSize([string]$root) {
     $bytes = 0.0
     $hasLink = $false
+    $protectedName = $null
     $maxLength = $root.Length
     $pending = [System.Collections.Generic.Stack[string]]::new()
     $pending.Push($root)
     while ($pending.Count -gt 0) {
+        Assert-Time
         $dir = $pending.Pop()
         foreach ($child in [System.IO.DirectoryInfo]::new($dir).EnumerateFileSystemInfos()) {
             if ($child.FullName.Length -gt $maxLength) { $maxLength = $child.FullName.Length }
             if (($child.Attributes -band $script:reparsePoint) -ne 0) { $hasLink = $true; continue }
-            if (($child.Attributes -band $script:directoryFlag) -ne 0) { $pending.Push($child.FullName); continue }
+            $isDir = ($child.Attributes -band $script:directoryFlag) -ne 0
+            if ($null -eq $protectedName) {
+                $why = Get-NameReason $child.FullName $isDir
+                if ($null -ne $why) { $protectedName = $child.Name + ' (' + $why + ')' }
+            }
+            if ($isDir) { $pending.Push($child.FullName); continue }
             $bytes += $child.Length
         }
     }
-    return @{ bytes = $bytes; hasLink = $hasLink; maxLength = $maxLength }
+    return @{ bytes = $bytes; hasLink = $hasLink; maxLength = $maxLength; protectedName = $protectedName }
+}
+
+# Stops an item before Drive Cleanup stops waiting (600 s): the item is skipped, nothing half-done is left
+# unrecorded. Called inside loops that can run long.
+function Assert-Time {
+    if ($script:stopwatch.ElapsedMilliseconds -ge $script:hardStopMs) { throw 'Time limit reached; not done. Run the cleanup again for the rest.' }
 }
 
 function Test-SameVolume([string]$a, [string]$b) {
@@ -281,19 +308,44 @@ if ($needsQuarantine) {
             [Security.Principal.SecurityIdentifier]::new('S-1-5-32-544'))) {
         $acl.AddAccessRule([System.Security.AccessControl.FileSystemAccessRule]::new($sid, $full, $inherit, $none, $allow))
     }
-    [void][System.IO.Directory]::CreateDirectory($quarantineRoot)
+    # The root, shared by this user's runs, gets the same rights. One that already exists must be
+    # owned by this user, SYSTEM or Administrators: another account that made it first could
+    # otherwise rename run folders and plant a restore.json.
+    try {
+        if ([System.IO.Directory]::Exists($quarantineRoot)) {
+            $owner = [System.IO.Directory]::GetAccessControl($quarantineRoot, [System.Security.AccessControl.AccessControlSections]::Owner).GetOwner([Security.Principal.SecurityIdentifier]).Value
+            if (@([Security.Principal.WindowsIdentity]::GetCurrent().User.Value, 'S-1-5-18', 'S-1-5-32-544') -notcontains $owner) {
+                Write-Refusal 'bad_quarantine' ('The folder ' + $quarantineRoot + ' belongs to another account, so nothing was changed. Choose another quarantine drive in Settings, or remove that folder.')
+                exit 0
+            }
+        } else {
+            [void][System.IO.Directory]::CreateDirectory($quarantineRoot, $acl)
+        }
+    } catch {
+        Write-Refusal 'bad_quarantine' ('The quarantine folder could not be made or checked (' + [string]$_.Exception.Message + '), so nothing was changed.')
+        exit 0
+    }
     if ([System.IO.Directory]::Exists($runDir)) {
         Write-Refusal 'bad_quarantine' 'This run already has a quarantine folder, so nothing was changed.'
         exit 0
     }
-    [void][System.IO.Directory]::CreateDirectory($runDir, $acl)
+    try {
+        [void][System.IO.Directory]::CreateDirectory($runDir, $acl)
+    } catch {
+        Write-Refusal 'bad_quarantine' ('The quarantine folder could not be made (' + [string]$_.Exception.Message + '), so nothing was changed.')
+        exit 0
+    }
 }
 $restore = [System.Collections.Generic.List[object]]::new()
 
+# Written to a temporary file, then swapped in: a stop half-way never leaves a broken restore.json.
 function Save-Restore {
     if ($script:restore.Count -eq 0) { return }
     $doc = [pscustomobject]@{ runId = $script:runId; createdAt = [DateTime]::UtcNow.ToString('o'); root = $script:quarantineRoot; items = @($script:restore) }
-    [System.IO.File]::WriteAllText((Join-Path $script:runDir 'restore.json'), ($doc | ConvertTo-Json -Depth 4))
+    $target = Join-Path $script:runDir 'restore.json'
+    $temp = $target + '.new'
+    [System.IO.File]::WriteAllText($temp, ($doc | ConvertTo-Json -Depth 4))
+    if ([System.IO.File]::Exists($target)) { [System.IO.File]::Replace($temp, $target, $null) } else { [System.IO.File]::Move($temp, $target) }
 }
 
 # ------------------------------------------------------------------ items
@@ -319,6 +371,9 @@ foreach ($item in @($list.items)) {
         $path = Resolve-LongName ([System.IO.Path]::GetFullPath($path).TrimEnd('\'))
         $reason = Get-ProtectedReason $path ([string]$item.category) $isFolder
         if ($null -ne $reason) { throw ('Protected: ' + $reason + '.') }
+        # restore.ps1 never puts anything back through a name that looks like a short name (PROGRA~1),
+        # so nothing with such a name is moved to quarantine either.
+        if ($action -eq 'quarantine' -and $path -match '~\d') { throw 'Its name looks like a Windows short name (~1), which Restore would refuse; move it yourself.' }
         if ($isFolder) {
             if (-not [System.IO.Directory]::Exists($path)) { throw 'It no longer exists.' }
             $info = [System.IO.DirectoryInfo]::new($path)
@@ -348,13 +403,20 @@ foreach ($item in @($list.items)) {
             $dirs = [System.Collections.Generic.List[string]]::new()
             $pending = [System.Collections.Generic.Stack[string]]::new()
             $pending.Push($path)
+            $stoppedEarly = $false
             while ($pending.Count -gt 0) {
+                # Deleting re-creatable data can stop part-way safely; it must not run past Drive Cleanup's wait.
+                if ($stopwatch.ElapsedMilliseconds -ge $hardStopMs) { $stoppedEarly = $true; $isTruncated = $true; break }
                 $dir = $pending.Pop()
                 $dirs.Add($dir)
                 try { $children = @([System.IO.DirectoryInfo]::new($dir).GetFileSystemInfos()) } catch { $kept++; continue }
                 foreach ($child in $children) {
                     if (($child.Attributes -band $reparsePoint) -ne 0) { $kept++; continue }
-                    if (($child.Attributes -band $directoryFlag) -ne 0) { $pending.Push($child.FullName); continue }
+                    $isDir = ($child.Attributes -band $directoryFlag) -ne 0
+                    # The protection rules hold inside the folder too: a key, database, .env or .git found
+                    # in an old Temp folder is kept (the scan saw the folder only as a whole).
+                    if ($null -ne (Get-NameReason $child.FullName $isDir)) { $kept++; continue }
+                    if ($isDir) { $pending.Push($child.FullName); continue }
                     if ($child.LastWriteTimeUtc -gt $scanFinishedAt -or $child.CreationTimeUtc -gt $scanFinishedAt) { $kept++; continue }
                     try {
                         $len = [double]$child.Length
@@ -369,19 +431,27 @@ foreach ($item in @($list.items)) {
                 try { [System.IO.Directory]::Delete($dirs[$i], $false) } catch { }
             }
             $deletedBytes += $removed
-            $result.status = 'deleted'
             $result.bytes = $removed
-            if ($kept -gt 0) { $result.detail = [string]$kept + ' files were in use or newer than the scan and were kept.' }
+            if ($removed -eq 0 -and $kept -gt 0) {
+                $result.status = 'skipped'
+                $result.detail = 'Nothing removed: every file in it was in use, newer than the scan, or protected.'
+            } else {
+                $result.status = 'deleted'
+                if ($kept -gt 0) { $result.detail = [string]$kept + ' files were in use, newer than the scan, or protected, and were kept.' }
+                if ($stoppedEarly) { $result.detail = ($result.detail + ' Stopped at the time limit; run the cleanup again for the rest.').Trim() }
+            }
         } elseif ($action -eq 'quarantine') {
-            # A move to another drive reads the data three times (hash, copy, hash of the copy).
-            # At a cautious 60 MB/s, skip what cannot finish before Drive Cleanup stops waiting.
-            if (-not (Test-SameVolume $path $quarantineRoot)) {
-                $needMs = [double]$item.bytes * 3 / 60MB * 1000
-                if ($stopwatch.ElapsedMilliseconds + $needMs -gt $budgetMs) {
-                    if ($needMs -gt $budgetMs) { throw 'Too big to move to another drive in one go; move it yourself, or choose quarantine on the same drive in Settings.' }
-                    $isTruncated = $true
-                    throw 'Time limit reached; not done. Run the cleanup again for the rest.'
-                }
+            # A move to another drive reads the data three times (hash, copy, hash of the copy); a
+            # file moved on the same drive is still hashed once. At a cautious 60 MB/s, skip what
+            # cannot finish before Drive Cleanup stops waiting.
+            $sameVolume = Test-SameVolume $path $quarantineRoot
+            $passes = 3
+            if ($sameVolume) { $passes = $(if ($isFolder) { 0 } else { 1 }) }
+            $needMs = [double]$item.bytes * $passes / 60MB * 1000
+            if ($stopwatch.ElapsedMilliseconds + $needMs -gt $budgetMs) {
+                if ($needMs -gt $budgetMs) { throw 'Too big to move in one go; move it yourself, or choose quarantine on the same drive in Settings.' }
+                $isTruncated = $true
+                throw 'Time limit reached; not done. Run the cleanup again for the rest.'
             }
             $relative = $path.Substring(0, 1) + $path.Substring(2)
             $dest = Join-Path $runDir $relative
@@ -391,6 +461,7 @@ foreach ($item in @($list.items)) {
             if ($isFolder) {
                 $tree = Get-TreeSize $path
                 if ($tree.hasLink) { throw 'It contains a link or junction.' }
+                if ($null -ne $tree.protectedName) { throw ('It contains a protected item: ' + $tree.protectedName + '. Move what you want yourself.') }
                 if ($dest.Length + $tree.maxLength - $path.Length -ge $maxPath) { throw 'A file in it would have a path too long in quarantine (over 260 characters); move it yourself.' }
                 $expected = [double]$item.bytes
                 if ($tree.bytes -gt ($expected * 1.05 + 1MB) -or $tree.bytes -lt ($expected * 0.95 - 1MB)) { throw 'It changed since the scan.' }
@@ -413,6 +484,7 @@ foreach ($item in @($list.items)) {
                     $copied = [System.Collections.Generic.List[string]]::new()
                     try {
                         foreach ($f in $files) {
+                            Assert-Time
                             $target = Join-Path $dest $f.Substring($path.Length)
                             [System.IO.File]::Copy($f, $target, $false)
                             $copied.Add($target)
@@ -423,6 +495,11 @@ foreach ($item in @($list.items)) {
                         foreach ($t in $copied) { try { [System.IO.File]::Delete($t) } catch { } }
                         throw
                     }
+                    # Recorded as "moving" before any original goes: if the script is stopped from here on,
+                    # restore.ps1 merges back whatever is missing at the original place.
+                    $entry = [pscustomobject]@{ id = $id; original = $path; destination = $dest; isFolder = $true; sha256 = $null; bytes = $tree.bytes; category = [string]$item.category; state = 'moving' }
+                    $restore.Add($entry)
+                    Save-Restore
                     # Remove the originals; if one cannot go, put back those already removed and undo the copy.
                     $removedFiles = [System.Collections.Generic.List[string]]::new()
                     try {
@@ -433,15 +510,32 @@ foreach ($item in @($list.items)) {
                         }
                     } catch {
                         $why = [string]$_.Exception.Message
+                        $putBack = $true
                         foreach ($f in $removedFiles) {
-                            $copy = Join-Path $dest $f.Substring($path.Length)
-                            [System.IO.File]::Copy($copy, $f, $false)
-                            [System.IO.File]::SetLastWriteTimeUtc($f, [System.IO.File]::GetLastWriteTimeUtc($copy))
+                            try {
+                                $copy = Join-Path $dest $f.Substring($path.Length)
+                                [System.IO.File]::Copy($copy, $f, $false)
+                                [System.IO.File]::SetLastWriteTimeUtc($f, [System.IO.File]::GetLastWriteTimeUtc($copy))
+                            } catch {
+                                $putBack = $false
+                            }
+                        }
+                        if (-not $putBack) {
+                            # Some originals could not be put back: the quarantine copy stays, recorded as
+                            # "moving", so Restore can still put the rest back and purge never loses it unnoticed.
+                            $result.status = 'quarantined'
+                            $result.destination = $dest
+                            $result.bytes = $tree.bytes
+                            $quarantinedBytes += $tree.bytes
+                            throw ('Part of the folder moved and part could not (' + $why + '); it is recorded in quarantine: Restore puts it back together.')
                         }
                         foreach ($t in $copied) { try { [System.IO.File]::Delete($t) } catch { } }
                         try { [System.IO.Directory]::Delete($dest, $true) } catch { }
+                        [void]$restore.Remove($entry)
+                        Save-Restore
                         throw ('A file in it could not be removed, so the folder was left in place: ' + $why)
                     }
+                    $entry.state = 'quarantined'
                     for ($i = $dirs.Count - 1; $i -ge 0; $i--) { try { [System.IO.Directory]::Delete($dirs[$i], $false) } catch { } }
                 }
                 $quarantinedBytes += $tree.bytes
@@ -460,22 +554,31 @@ foreach ($item in @($list.items)) {
             }
             $result.status = 'quarantined'
             $result.destination = $dest
-            $restore.Add([pscustomobject]@{ id = $id; original = $path; destination = $dest; isFolder = $isFolder; sha256 = $result.sha256; bytes = $result.bytes; category = [string]$item.category; state = 'quarantined' })
+            if (@($restore | Where-Object { $_.id -eq $id }).Count -eq 0) {
+                $restore.Add([pscustomobject]@{ id = $id; original = $path; destination = $dest; isFolder = $isFolder; sha256 = $result.sha256; bytes = $result.bytes; category = [string]$item.category; state = 'quarantined' })
+            }
             # Saved after every move: if the run is stopped, everything moved so far can still be put back.
-            Save-Restore
+            # The move itself succeeded, so a failure to save is reported on the item, not as a skip.
+            try { Save-Restore } catch { $result.detail = 'Moved, but restore.json could not be saved: ' + [string]$_.Exception.Message }
         } else {
             throw 'Unknown action.'
         }
     } catch {
-        $result.status = 'skipped'
         $result.detail = [string]$_.Exception.Message
+        # A folder that moved in part stays "quarantined" (it is recorded, and Restore puts it together).
+        if ($result.status -eq 'quarantined') {
+            try { Save-Restore } catch { }
+            $results.Add([pscustomobject]$result)
+            continue
+        }
+        $result.status = 'skipped'
         if ($result.detail -match 'being used by another process') { $result.detail = 'It is in use.' }
         elseif ($result.detail -match 'denied' -and $result.detail -notmatch 'left in place') { $result.detail = 'Access was denied.' }
         elseif ($result.detail -match 'too long|PathTooLong' -and $result.detail -notmatch 'quarantine') { $result.detail = 'Its path is too long for Windows PowerShell; move it yourself.' }
     }
     $results.Add([pscustomobject]$result)
 }
-Save-Restore
+try { Save-Restore } catch { }
 # Nothing was moved after all: remove the empty run folder made for it.
 if ($null -ne $runDir -and $restore.Count -eq 0) { try { [System.IO.Directory]::Delete($runDir, $false) } catch { } }
 $sha.Dispose()

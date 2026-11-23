@@ -15,7 +15,7 @@
       "name": "drive-cleanup",
       "source": "./plugins/drive-cleanup",
       "description": "Deep C: drive audit and cleanup for Windows: duplicates by SHA-256, installers, archives, developer caches, leftovers. Scans only read; Claude proposes, you answer once; files go to a restorable quarantine. Beta.",
-      "version": "1.6.0-beta.1"
+      "version": "1.7.0-beta.1"
     }
   ]
 }

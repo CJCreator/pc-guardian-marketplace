@@ -3,6 +3,7 @@ import { CATEGORY_LABEL, CLASS_LABEL } from './core/classify.ts'
 import { percentText, sizeText } from './core/format.ts'
 import { isUnder, protectedBy } from './core/paths.ts'
 import { DEV_CACHES } from './core/devcaches.ts'
+import { chooseQuarantineRoot } from './core/plan.ts'
 import { buildReports, finalReport } from './core/reports.ts'
 import { normalizeScriptText, SCRIPTS, sha256Hex } from './core/scripts.ts'
 import type { CategoryId, FindingClass } from './core/types.ts'
@@ -79,7 +80,7 @@ export const TOOL_SPECS: Record<ToolName, { description: string; inputSchema: Re
       type: 'object',
       properties: {
         limit: { type: 'integer', minimum: 1, maximum: 100, default: 25 },
-        offset: { type: 'integer', minimum: 0, default: 0 },
+        offset: { type: 'integer', minimum: 0, maximum: 1000, default: 0 },
       },
       additionalProperties: false,
     },
@@ -143,7 +144,7 @@ export const TOOL_SPECS: Record<ToolName, { description: string; inputSchema: Re
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
   propose_cleanup: {
-    description: `Proposes a cleanup of findings from the latest deep scan and asks the person ONCE, in Claude Code's own dialog, showing the real totals and largest items: Clean (or Turn on and clean, when cleanup is off), Show the list (selects the items in the pane's Choose items tab for the person to change), or Cancel. Nothing changes unless they answer Clean. Name findingIds from get_findings, or categories and/or classes (safe, review) to take every matching item, largest first; maxBytes caps the total. Protected items, a duplicate group's copy to keep and anything Drive Cleanup does not clean are refused. Class A (safe) items are deleted; class B (review) items are moved to a restorable quarantine. At most ${String(MAX_PROPOSAL_ITEMS)} items. elevatedTasks adds Windows cleanup that needs administrator rights (see get_recommendations for each task's size, effect and undo): after the person answers yes, Windows asks them again (UAC); if they decline there, those tasks are skipped and the rest still runs. Report the result exactly as returned; if the person declines, do not propose again unless they ask.`,
+    description: `Proposes a cleanup of findings from the latest deep scan and asks the person ONCE, in Claude Code's own dialog, showing the real totals and largest items, with the answers "Free N GB" (or "Clean up"; when cleanup is off, the question says the answer also turns it on), "Let me choose" (selects the items in the pane's Choose items tab for the person to change) and "Not now". Nothing changes unless they answer the first. The selection is the union of findingIds (from get_findings) and every item whose category or class (safe, review) is listed; the Recycle Bin only when named. Caches and temporary files come first, then the largest; maxBytes caps what frees the system drive (a quarantine on the system drive frees nothing, so with maxBytes such moves are taken only when named). Protected items, a duplicate group's copy to keep and anything Drive Cleanup does not clean are refused. Class A (safe) items are deleted; class B (review) items are moved to a restorable quarantine. At most ${String(MAX_PROPOSAL_ITEMS)} items. elevatedTasks adds Windows cleanup that needs administrator rights (see get_recommendations for each task's size, effect and undo): after the person answers yes, Windows asks them again (UAC); if they decline there, those tasks are skipped and the rest still runs. Report the result exactly as returned; if the person declines, do not propose again unless they ask.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -268,7 +269,7 @@ function summaryText(scan: LoadedScan): string {
   }
   const r = scan.classified.recoverable
   lines.push(
-    `Recoverable (estimated from the scan): A. safe to clean ${sizeText(r.safeBytes)}; B. review before cleaning ${sizeText(r.reviewBytes)}; Windows-managed, cleaned with Windows tools ${sizeText(r.manualBytes)}.`,
+    `Recoverable (estimated from the scan): A. safe to clean (caches and temporary files) ${sizeText(r.safeBytes)}; Recycle Bin ${sizeText(r.binBytes)} (only when the person names it); B. review before cleaning ${sizeText(r.reviewBytes)}; Windows-managed ${sizeText(r.manualBytes)} (administrator tasks or Windows tools); developer caches cleaned by hand ${sizeText(r.devManualBytes)} (commands in get_dev_caches).`,
   )
   const top = scan.classified.totals
     .filter(t => t.class !== 'protected')
@@ -321,10 +322,20 @@ async function storageSummary($: EngineInterface): Promise<Answer> {
   const scan = await loadLatestScan($)
   if (scan === undefined) return NO_SCAN
   const walk = scan.walk
-  return answer(summaryText(scan), {
+  const settings = await loadSettings($)
+  const root = chooseQuarantineRoot(scan.volume, settings.quarantineDrive, 0)
+  let whereQuarantine = `Quarantine: no drive has room now (${root.status === 'refused' ? root.message : ''}).`
+  if (root.status === 'ok') {
+    whereQuarantine =
+      root.drive === scan.ctx.systemDrive.toUpperCase()
+        ? `Quarantine would be on ${root.drive}, the system drive: moving the person's old files there frees nothing until the quarantine is deleted for good.`
+        : `Quarantine would be on ${root.drive}: moving old files there frees their space on ${scan.ctx.systemDrive}.`
+  }
+  return answer(`${summaryText(scan)} ${whereQuarantine}`, {
     drives: scan.volume?.drives ?? null,
     storageSense: scan.volume?.storageSense ?? null,
-    topFolders: walk?.folders.filter(f => f.depth <= 2).slice(0, 30) ?? null,
+    // Largest first, down to AppData\Local\<app> and .cache\<tool> inside the profile (depth up to 5).
+    topFolders: walk?.folders.slice(0, 40) ?? null,
     ages: walk?.ages ?? null,
     lastAccessTrusted: scan.ctx.lastAccessTrusted,
     extensions: walk?.extensions.slice(0, 15) ?? null,
@@ -340,7 +351,7 @@ async function largestFiles($: EngineInterface, call: Readonly<Record<string, un
   if (scan.walk === null)
     return { result: 'The walk of the drive was not completed in the latest scan, so there is no list of files.' }
   const limit = Math.max(1, intInput(call, 'limit', 25, 100))
-  const offset = intInput(call, 'offset', 0, 100)
+  const offset = intInput(call, 'offset', 0, 1000)
   const files = scan.walk.largest.slice(offset, offset + limit).map(f => ({
     path: f.path,
     size: sizeText(f.bytes),
@@ -405,7 +416,7 @@ async function recommendations($: EngineInterface): Promise<Answer> {
     }
   })
   return answer(
-    `${recs.length === 0 ? 'No recommendations from the latest scan.' : `${String(recs.length)} recommendations.`} Drive Cleanup can do the administrator tasks listed under adminTasks through propose_cleanup (elevatedTasks): the person answers Clean, then Windows asks for administrator permission. Windows.old, restore points and turning hibernation fully off stay manual steps for the person.`,
+    `${recs.length === 0 ? 'No recommendations from the latest scan.' : `${String(recs.length)} recommendations.`} Drive Cleanup can do the administrator tasks listed under adminTasks through propose_cleanup (elevatedTasks): the person answers yes, then Windows asks for administrator permission. Windows.old, restore points and turning hibernation fully off stay manual steps for the person.`,
     { recommendations: recs, adminTasks },
   )
 }
@@ -513,7 +524,7 @@ async function duplicateGroups($: EngineInterface, call: Readonly<Record<string,
   }))
   const h = scan.hash
   return answer(
-    `${String(all.length)} duplicate groups; ${sizeText(wasted)} could be recovered by keeping one copy of each. ${String(h.filesHashed)} files hashed${h.isTruncated ? '; the search stopped at its time limit (the pane can continue it)' : ''}${h.skippedCloud > 0 ? `; ${String(h.skippedCloud)} cloud-only files skipped` : ''}. ${READ_ONLY_NOTE}`,
+    `${String(all.length)} duplicate groups; ${sizeText(wasted)} could be recovered by keeping one copy of each. ${String(h.filesHashed)} files hashed${h.isTruncated ? '; the search stopped at its time limit (the pane can continue it)' : ''}${h.skippedCloud > 0 ? `; ${String(h.skippedCloud)} cloud-only files skipped` : ''}${(h.skippedTooBig ?? 0) > 0 ? `; ${String(h.skippedTooBig)} very large files not compared (too big for one search)` : ''}. ${READ_ONLY_NOTE}`,
     page,
   )
 }

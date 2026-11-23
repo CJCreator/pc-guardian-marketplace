@@ -161,13 +161,20 @@ $sizes = @($bySize.Keys | Where-Object { $bySize[$_].Count -ge 2 } | Sort-Object
 $hashed = 0
 $bytesHashed = 0.0
 $skippedLocked = 0
+$skippedTooBig = 0
 $resumeAt = $null
 $groups = [System.Collections.Generic.List[object]]::new()
 
 foreach ($size in $sizes) {
     # A group of big files can take minutes: stop before one that cannot finish in time (at a cautious 80 MB/s).
     $needMs = [double]$bySize[$size].Count * [double]$size / 80MB * 1000
-    if ($stopwatch.ElapsedMilliseconds -ge $budgetMs -or ($hashed -gt 0 -and $stopwatch.ElapsedMilliseconds + $needMs -gt $budgetMs)) {
+    # A group too big for what is left of this run, with nothing hashed yet, is skipped (and
+    # counted) instead of stopping the search: smaller groups still get their turn.
+    if ($hashed -eq 0 -and $stopwatch.ElapsedMilliseconds + $needMs -gt $budgetMs) {
+        $skippedTooBig += $bySize[$size].Count
+        continue
+    }
+    if ($stopwatch.ElapsedMilliseconds -ge $budgetMs -or $stopwatch.ElapsedMilliseconds + $needMs -gt $budgetMs) {
         $isTruncated = $true
         $resumeAt = [double]($size + 1)
         break
@@ -250,6 +257,7 @@ $sha.Dispose()
     filesHashed      = $hashed
     bytesHashed      = $bytesHashed
     skippedLocked    = $skippedLocked
+    skippedTooBig    = $skippedTooBig
     skippedCloud     = $skippedCloud
     groups           = @($groups | Sort-Object -Property wasted -Descending | Select-Object -First $keepGroups | ForEach-Object {
         [pscustomobject]@{ sha256 = $_.sha256; bytes = $_.bytes; files = $_.files }

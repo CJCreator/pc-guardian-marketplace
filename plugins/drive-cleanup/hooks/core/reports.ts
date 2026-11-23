@@ -281,6 +281,8 @@ function cleanupRecommendations({ meta, classified, recommendations }: ReportInp
   out.push(`- **A. Safe to clean:** ${sizeText(r.safeBytes)}`)
   out.push(`- **B. Review before cleaning:** ${sizeText(r.reviewBytes)}`)
   out.push(`- **Windows-managed (manual):** ${sizeText(r.manualBytes)}`)
+  out.push(`- **Recycle Bin (only when chosen):** ${sizeText(r.binBytes)}`)
+  out.push(`- **Developer caches (manual commands):** ${sizeText(r.devManualBytes)}`)
   out.push('')
   out.push('| Category | Class | Items | Size | |', '| --- | --- | ---: | ---: | --- |')
   for (const t of classified.totals) {
@@ -482,7 +484,7 @@ export function finalReport(v: Verification): string {
     if (v.verify.quarantine.length === 0) out.push('No active quarantine.')
     for (const q of v.verify.quarantine) {
       out.push(
-        `- Run ${q.runId}: ${String(q.matched)} of ${String(q.checked)} items intact${q.missing > 0 ? `, ${String(q.missing)} missing` : ''}${q.mismatched > 0 ? `, **${String(q.mismatched)} changed**` : ''}.`,
+        `- Run ${q.runId}: ${String(q.matched)} of ${String(q.checked)} items intact${q.missing > 0 ? `, ${String(q.missing)} missing` : ''}${q.mismatched > 0 ? `, **${String(q.mismatched)} changed**` : ''}${(q.notHashed ?? 0) > 0 ? ` (${String(q.notHashed)} only checked to be there: the time limit came before their SHA-256)` : ''}.`,
       )
     }
     out.push('', '### Windows integrity', '')

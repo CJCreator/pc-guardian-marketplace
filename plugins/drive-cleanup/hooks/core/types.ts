@@ -97,6 +97,8 @@ export type RawWalk = {
   deniedFolders: number
   deniedSample: string[]
   /** Folders with a path too long for Windows PowerShell 5.1 (260 characters): not read. */
+  /** node_modules folders of projects (advice only, never offered), largest first; absent from older scripts. */
+  nodeModules?: { path: string; bytes: number; fileCount: number; modifiedUtc: string }[]
   longPathFolders: number
   longPathSample: string[]
   linkedFolders: number
@@ -189,6 +191,8 @@ export type RawHash = {
   filesHashed: number
   bytesHashed: number
   skippedLocked: number
+  /** Files in a size group too big to hash in the time left (null from older scripts). */
+  skippedTooBig?: number | null
   skippedCloud: number
   groups: { sha256: string; bytes: number; files: RawDuplicateFile[] }[]
   folderGroups: { signature: string; bytes: number; fileCount: number; folders: string[] }[]
@@ -199,7 +203,15 @@ export type RawVerify = {
   isElevated: boolean
   tools: { id: string; status: 'ok' | 'not_found' | 'failed'; version: string }[]
   projects: { path: string; exists: boolean; hasGit: boolean }[]
-  quarantine: { runId: string; checked: number; matched: number; missing: number; mismatched: number }[]
+  /** notHashed: present but not compared by SHA-256 (verify's time limit); null from older scripts. */
+  quarantine: {
+    runId: string
+    checked: number
+    matched: number
+    missing: number
+    mismatched: number
+    notHashed?: number | null
+  }[]
 }
 
 // ------------------------------------------------------------------ findings
@@ -353,7 +365,7 @@ export type RawApply =
 
 /** clean-cache.ps1 */
 export type RawCacheClean =
-  | { status: 'ok'; removedCount: number; removedBytes: number; skippedCount: number }
+  | { status: 'ok'; removedCount: number; removedBytes: number; skippedCount: number; isTruncated?: boolean | null }
   | { status: 'refused'; reason: string; detail: string }
 
 /** elevated.ps1, one task's result. */

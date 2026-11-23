@@ -50,6 +50,8 @@ $caches = @{
     nuget_plugins     = @{ roots = @(Join-Path $local 'NuGet\plugins-cache'); owners = @('dotnet', 'devenv', 'MSBuild') }
     vscode_cache      = @{ roots = @($editorParts | ForEach-Object { Join-Path (Join-Path $roaming 'Code') $_ }); owners = @('Code') }
     antigravity_cache = @{ roots = @($editorParts | ForEach-Object { Join-Path (Join-Path $roaming 'Antigravity') $_ }); owners = @('Antigravity') }
+    cursor_cache      = @{ roots = @($editorParts | ForEach-Object { Join-Path (Join-Path $roaming 'Cursor') $_ }); owners = @('Cursor') }
+    windsurf_cache    = @{ roots = @($editorParts | ForEach-Object { Join-Path (Join-Path $roaming 'Windsurf') $_ }); owners = @('Windsurf') }
     edge_cache        = @{ roots = @(Get-ChromiumCacheRoots (Join-Path $local 'Microsoft\Edge\User Data')); owners = @('msedge') }
     chrome_cache      = @{ roots = @(Get-ChromiumCacheRoots (Join-Path $local 'Google\Chrome\User Data')); owners = @('chrome') }
     brave_cache       = @{ roots = @(Get-ChromiumCacheRoots (Join-Path $local 'BraveSoftware\Brave-Browser\User Data')); owners = @('brave') }
@@ -82,6 +84,22 @@ foreach ($owner in $cache.owners) {
 
 $reparsePoint = [System.IO.FileAttributes]::ReparsePoint
 $directoryFlag = [System.IO.FileAttributes]::Directory
+# Stops well before Drive Cleanup's 300 s wait and reports what it removed so far.
+$stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+$budgetMs = 240000
+$isTruncated = $false
+
+# The protection rules hold here too (Temp can hold anything): keys, certificates, password
+# and other databases, credentials and .env files, and anything in a .git or .ssh folder are kept.
+$keepExt = @('.pem', '.key', '.pfx', '.p12', '.crt', '.cer', '.ppk', '.kdbx', '.keychain', '.jks', '.keystore', '.db', '.sqlite', '.sqlite3', '.mdf', '.ldf', '.accdb', '.mdb', '.pst', '.ost', '.edb')
+$keepSegments = @('.git', '.ssh', '.gnupg', '.aws', '.azure', '.kube', '.gcloud')
+function Test-Keep([string]$path) {
+    $name = [System.IO.Path]::GetFileName($path).ToLowerInvariant()
+    if ($keepExt -contains [System.IO.Path]::GetExtension($name)) { return $true }
+    if ($name -eq '.env' -or $name.StartsWith('.env.') -or $name -match '^id_(rsa|dsa|ecdsa|ed25519)' -or $name -match '^(credentials|secrets?)([._-]|$)') { return $true }
+    foreach ($segment in $path.Split('\')) { if ($keepSegments -contains $segment) { return $true } }
+    return $false
+}
 
 # Files must be older than the approval, and for Temp also unchanged for 7 days.
 $cutoff = $approvedAt
@@ -98,6 +116,7 @@ if ($cache.ContainsKey('isRecycleBin')) {
     $skipped = 0
     if ([System.IO.Directory]::Exists($bin) -and ([System.IO.DirectoryInfo]::new($bin).Attributes -band $reparsePoint) -eq 0) {
         foreach ($record in @([System.IO.DirectoryInfo]::new($bin).GetFiles('$I*'))) {
+            if ($stopwatch.ElapsedMilliseconds -ge $budgetMs) { $isTruncated = $true; break }
             if (($record.Attributes -band $reparsePoint) -ne 0) { $skipped++; continue }
             if ($record.LastWriteTimeUtc -gt $approvedAt) { $skipped++; continue }
             $content = Join-Path $bin ('$R' + $record.Name.Substring(2))
@@ -122,7 +141,7 @@ if ($cache.ContainsKey('isRecycleBin')) {
             }
         }
     }
-    [pscustomobject]@{ status = 'ok'; removedCount = $removed; removedBytes = $removedBytes; skippedCount = $skipped } | ConvertTo-Json -Compress
+    [pscustomobject]@{ status = 'ok'; removedCount = $removed; removedBytes = $removedBytes; skippedCount = $skipped; isTruncated = $isTruncated } | ConvertTo-Json -Compress
     exit 0
 }
 
@@ -137,6 +156,7 @@ foreach ($root in $cache.roots) {
     $pending = [System.Collections.Generic.Stack[string]]::new()
     $pending.Push($root)
     while ($pending.Count -gt 0) {
+        if ($stopwatch.ElapsedMilliseconds -ge $budgetMs) { $isTruncated = $true; break }
         $dir = $pending.Pop()
         if ($dir -ne $root) {
             $dirs.Add($dir)
@@ -146,6 +166,7 @@ foreach ($root in $cache.roots) {
         try {
             foreach ($child in [System.IO.DirectoryInfo]::new($dir).EnumerateFileSystemInfos()) {
                 if (($child.Attributes -band $reparsePoint) -ne 0) { $skipped++; continue }
+                if (Test-Keep $child.FullName) { $skipped++; continue }
                 if (($child.Attributes -band $directoryFlag) -ne 0) { $pending.Push($child.FullName); continue }
                 if ($child.LastWriteTimeUtc -gt $cutoff -or $child.CreationTimeUtc -gt $cutoff) { $skipped++; continue }
                 try {
@@ -172,4 +193,5 @@ foreach ($root in $cache.roots) {
     removedCount = $removed
     removedBytes = $removedBytes
     skippedCount = $skipped
+    isTruncated  = $isTruncated
 } | ConvertTo-Json -Compress
