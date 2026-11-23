@@ -1,0 +1,38 @@
+amends "package://github.com/jdx/hk/releases/download/v2.13.0/hk@2.13.0#/Config.pkl"
+
+// Local gates. A hook, not a line in AGENTS.md: agents skip steps.
+//   pre-commit: format and lint the staged files (fixes are re-staged)
+//   pre-push:   the same full check CI runs
+
+local formatted = List("**/*.ts", "**/*.tsx", "**/*.js", "**/*.mjs", "**/*.json", "**/*.yml", "**/*.toml")
+local generated = List("plugins/pc-guardian/dashboard/**", "plugins/pc-guardian/hooks/deps.js", "dev/types/**")
+
+local staged = new Mapping<String, Step> {
+  ["fmt"] {
+    glob = formatted
+    exclude = generated
+    check = "bun fmt --check --no-script {{files}}"
+    fix = "bun fmt --no-script {{files}}"
+  }
+  ["lint"] {
+    glob = List("**/*.ts", "**/*.tsx", "**/*.js", "**/*.mjs")
+    exclude = generated
+    check = "bun run lint {{files}}"
+    fix = "bun run lint --fix {{files}}"
+  }
+}
+
+hooks {
+  ["pre-commit"] {
+    fix = true
+    stash = "git"
+    steps = staged
+  }
+  ["pre-push"] {
+    steps {
+      ["ci"] { check = "bun run ci" }
+    }
+  }
+  ["check"] { steps = staged }
+  ["fix"] { fix = true; steps = staged }
+}

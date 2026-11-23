@@ -1,15 +1,9 @@
 import type { Register } from 'claude-code'
 import { atom, read } from 'claude-code'
-import {
-  CleanupStateSchema,
-  configureZod,
-  runSummary,
-  TOOL_NAMES,
-  TOOL_SPECS,
-  toolInputJsonSchema,
-} from './deps.js'
+import { CleanupStateSchema, configureZod, runSummary, TOOL_NAMES, TOOL_SPECS, toolInputJsonSchema } from './deps.js'
 import { cancelActiveAudit, startAudit, startRecheck } from './audit.ts'
 import { startCleanupFromPane } from './cleanup.ts'
+import { proposeCleanup, PROPOSE_SPEC, PROPOSE_TOOL } from './propose.ts'
 import {
   bar,
   isRetryable,
@@ -48,6 +42,8 @@ export const register: Register = on => {
         inputSchema: toolInputJsonSchema(name),
       })
     }
+    // The one tool that can change the PC, and only on the person's yes (propose.ts).
+    await $.tool.register({ name: PROPOSE_TOOL, ...PROPOSE_SPEC })
     return next(e)
   })
 
@@ -95,6 +91,7 @@ export const register: Register = on => {
   on('tool.call', { tool: 'mcp__pc-guardian__open_dashboard' }, ($, e, next) =>
     answerTool($, 'open_dashboard', e, next.signal),
   ).catch(internalFailure)
+  on('tool.call', { tool: 'mcp__pc-guardian__propose_cleanup' }, ($, e) => proposeCleanup($, e)).catch(internalFailure)
   on('tool.call', { tool: 'mcp__pc-guardian__get_cleanup_preview' }, ($, e, next) =>
     answerTool($, 'get_cleanup_preview', e, next.signal),
   ).catch(internalFailure)
@@ -118,18 +115,12 @@ export const register: Register = on => {
           <Box flexDirection="column">
             <Text>
               <Text weight="bold" color={scoreColor(summary.overall)}>
-                {summary.overall === null
-                  ? 'No score'
-                  : `Health Score ${String(summary.overall)}/100`}
+                {summary.overall === null ? 'No score' : `Health Score ${String(summary.overall)}/100`}
               </Text>
               {summary.bandLabel === null ? '' : ` · ${summary.bandLabel}`}
             </Text>
-            {summary.isPartial && (
-              <Text color="warning">Partial scan: some areas could not be checked.</Text>
-            )}
-            {summary.capNote !== null && (
-              <Text color="error">{summary.capNote}: a critical security finding.</Text>
-            )}
+            {summary.isPartial && <Text color="warning">Partial scan: some areas could not be checked.</Text>}
+            {summary.capNote !== null && <Text color="error">{summary.capNote}: a critical security finding.</Text>}
             <Text dimColor>
               Scanned {timeText(summary.createdAt)} in {String(summary.durationSeconds)} s
               {summary.trend.length > 1 ? ` · trend ${trendText(summary.trend)}` : ''}
@@ -142,11 +133,8 @@ export const register: Register = on => {
           <Box flexDirection="column">
             {summary.categories.map(c => (
               <Text>
-                {c.label.padEnd(19).slice(0, 19)}{' '}
-                <Text color={scoreColor(c.score)}>{bar(c.score, barWidth)}</Text>{' '}
-                {c.score === null
-                  ? 'not checked'
-                  : `${String(c.score).padStart(3)} ${scoreWord(c.score)}`}
+                {c.label.padEnd(19).slice(0, 19)} <Text color={scoreColor(c.score)}>{bar(c.score, barWidth)}</Text>{' '}
+                {c.score === null ? 'not checked' : `${String(c.score).padStart(3)} ${scoreWord(c.score)}`}
               </Text>
             ))}
           </Box>
@@ -159,10 +147,7 @@ export const register: Register = on => {
               {isRunning ? ` · ${seconds(Date.now() - progress.startedAt)} so far` : ''}
             </Text>
             {progress.steps.map(step => (
-              <Text
-                dimColor={step.state === 'pending'}
-                color={step.state === 'not_checked' ? 'warning' : undefined}
-              >
+              <Text dimColor={step.state === 'pending'} color={step.state === 'not_checked' ? 'warning' : undefined}>
                 {STEP_MARK[step.state]} {step.label.padEnd(19).slice(0, 19)} {STEP_WORD[step.state]}
                 {step.durationMs === null ? '' : ` (${seconds(step.durationMs)})`}
                 {step.notChecked === null ? '' : `: ${step.notChecked.detail}`}
@@ -191,9 +176,8 @@ export const register: Register = on => {
               <Text>• {w.title}</Text>
             ))}
             <Text dimColor>
-              {String(summary.counts.critical)} critical · {String(summary.counts.recommended)}{' '}
-              recommended · {String(summary.counts.optional)} optional. Ask Claude about any of
-              them.
+              {String(summary.counts.critical)} critical · {String(summary.counts.recommended)} recommended ·{' '}
+              {String(summary.counts.optional)} optional. Ask Claude about any of them.
             </Text>
           </Box>
         )}
@@ -231,17 +215,13 @@ export const register: Register = on => {
         </Box>
         {cleanup !== null && cleanup.status !== 'idle' && (
           <Text color="warning">
-            {cleanup.status === 'checking'
-              ? 'Checking what can be cleaned…'
-              : (cleanup.message ?? 'Cleaning…')}
+            {cleanup.status === 'checking' ? 'Checking what can be cleaned…' : (cleanup.message ?? 'Cleaning…')}
           </Text>
         )}
         {cleanup?.status === 'idle' && cleanup.lastRun !== null && (
           <Text dimColor>Last cleanup: {runSummary(cleanup.lastRun)}</Text>
         )}
-        <Text dimColor>
-          PC Guardian reads only. It changes something only when you clean up and confirm.
-        </Text>
+        <Text dimColor>PC Guardian reads only. It changes something only when you clean up and confirm.</Text>
       </Box>
     )
   })

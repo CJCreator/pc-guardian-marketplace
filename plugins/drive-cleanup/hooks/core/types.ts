@@ -2,8 +2,7 @@
 
 export type StepId = 'volume' | 'walk' | 'devcaches' | 'leftovers' | 'windows' | 'hash'
 
-export type NotCheckedReason =
-  'needs_admin' | 'timeout' | 'failed' | 'cancelled' | 'unsupported_platform' | 'disabled'
+export type NotCheckedReason = 'needs_admin' | 'timeout' | 'failed' | 'cancelled' | 'unsupported_platform' | 'disabled'
 
 export type NotChecked = { status: 'not_checked'; reason: NotCheckedReason; detail: string }
 
@@ -218,6 +217,8 @@ export type CategoryId =
   | 'build_cache'
   | 'dev_cache_safe'
   | 'dev_cache_review'
+  | 'browser_cache'
+  | 'recycle_bin'
   | 'leftover'
   | 'duplicate'
   | 'duplicate_folder'
@@ -349,6 +350,23 @@ export type RawApply =
 export type RawCacheClean =
   | { status: 'ok'; removedCount: number; removedBytes: number; skippedCount: number }
   | { status: 'refused'; reason: string; detail: string }
+
+/** elevated.ps1, one task's result. */
+export type RawElevatedTask = {
+  id: string
+  status: 'done' | 'skipped' | 'failed' | 'missing'
+  removedBytes: number
+  removedCount: number
+  skippedCount: number
+  detail: string
+}
+
+/** elevated.ps1, through the bootstrap's result file. */
+export type RawElevated =
+  { status: 'ok'; tasks: RawElevatedTask[] } | { status: 'refused'; reason: string; detail: string }
+
+/** The launcher's one line: whether Windows started the elevated part. */
+export type RawElevatedLaunch = { status: 'ran'; exitCode: number } | { status: 'declined' } | { status: 'failed' }
 
 /** purge.ps1 */
 export type RawPurge =

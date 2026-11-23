@@ -1,11 +1,12 @@
 ---
 description: How to answer questions about this Windows PC's health, speed, startup, storage, browsers, security or stability with PC Guardian. Use when the user asks why their PC is slow, what to clean up, whether it is secure, or about a PC Guardian score, scan or recommendation.
 allowed-tools: mcp__pc-guardian__self_check mcp__pc-guardian__run_full_audit mcp__pc-guardian__get_system_performance mcp__pc-guardian__get_startup_apps mcp__pc-guardian__get_storage_analysis mcp__pc-guardian__get_browser_diagnostics mcp__pc-guardian__get_security_status mcp__pc-guardian__get_stability_status mcp__pc-guardian__get_health_score mcp__pc-guardian__get_recommendations mcp__pc-guardian__generate_report mcp__pc-guardian__get_scan_history mcp__pc-guardian__compare_scans mcp__pc-guardian__open_dashboard
+user-invocable: false
 ---
 
 # Explaining a PC with PC Guardian
 
-PC Guardian is a Windows audit whose tools only read: they measure the machine and score it; your job is to explain and prioritize what they return, never to invent what they did not. Its one exception is cleanup (Temp files, Recycle Bin, browser caches, startup apps), which only the user can run, by ticking items and pressing Clean in the dashboard or the pane; you can show what it could free with `get_cleanup_preview` (`/pc-guardian:cleanup`), never clean.
+PC Guardian is a Windows audit whose tools only read: they measure the machine and score it; your job is to explain and prioritize what they return, never to invent what they did not. Its one exception is cleanup (Temp files, Recycle Bin, browser caches, startup apps), which runs only on the user's yes: show what it could free with `get_cleanup_preview`, then `propose_cleanup` asks them once (see the cleanup skill). Never clean any other way.
 
 ## Rules
 

@@ -4,6 +4,66 @@ All notable changes to Drive Cleanup. The format follows [Keep a Changelog](http
 
 ## [Unreleased]
 
+## [1.4.0-beta.1] - 2026-11-23
+
+One question for everything. Still not run on Windows: see TESTING.md §6–§9.
+
+### Added
+
+- **Your Temp files** (unchanged for 7 days) are cleaned by Drive Cleanup itself, file by file, with the 7-day rule enforced in `clean-cache.ps1`. They used to be left to PC Guardian or Windows.
+- **Browser caches** (Edge, Chrome, Brave, Firefox): only each profile's cache folders (Chromium: `Cache\Cache_Data`, `Code Cache`, `GPUCache`; Firefox: `cache2`), only while that browser is closed. The rest of a browser profile stays protected (§2.2 exception, tested).
+- **The Recycle Bin** on the system drive: emptied item by item, only items deleted before the approval (by their `$I` record). Never chosen by "all safe items" or the pane's one-press button, only by name; the dialog says "Those files are gone for good."
+
+### Changed
+
+- `/drive-cleanup:free-space` asks **one** question: PC Guardian's second question is gone. PC Guardian keeps startup apps (speed, not space) and its own cleanup for people without Drive Cleanup.
+- Emptied cache subfolders are removed only if they were older than the approval when read, so a folder an app just made stays.
+
+## [1.3.0-beta.1] - 2026-11-23
+
+Easier to use. Still not run on Windows: see TESTING.md §6–§8.
+
+### Added
+
+- **Clean safe items (…)** on the pane's Overview: one press selects every cache and temporary file and asks once (and turns cleanup on, if needed, by asking).
+- **Turn on cleanup and clean selected…** in Choose items, in place of a trip to Settings.
+
+### Changed
+
+- **The confirmation is plain**: "Free up about 21 GB on C:?", then what is deleted (apps rebuild it), what is moved and can be put back, the Windows part with a heads-up about the "Windows PowerShell" permission prompt, and the biggest items. The yes button names the size (**Free 21 GB**); the others are **Let me choose** and **Not now**. A quarantine on C: is not counted as freed, and the dialog says so.
+- **Plain words everywhere**: no "class A/B" in the pane; tabs are Overview, Choose items, Undo, Settings; results read "Deleted 14.2 GB of caches and temporary files, moved 4.1 GB of your files to quarantine" and end with how to undo.
+- **`/drive-cleanup:free-space`** tells Claude how to talk: a short plan before and a before/after summary, sizes in GB, no jargon, and a fresh scan on its own when the old one is too old.
+
+## [1.2.0-beta.1] - 2026-11-23
+
+Administrator cleanup, asked twice. Not yet run on Windows: see TESTING.md §7.
+
+### Added
+
+- **`propose_cleanup` `elevatedTasks`**: six fixed administrator tasks: Windows Temp (older than 7 days), memory dumps, Windows Update download cache (skipped while updates install; the service restarts after), Delivery Optimization cache, DISM component cleanup (no /ResetBase), smaller hibernation file. The dialog lists them with estimated sizes; after Clean, Windows asks for permission (UAC). Declining UAC skips only those tasks.
+- `get_windows_recommendations` lists the administrator tasks with size, effect and undo.
+- Each administrator task is logged in the run record and `deletion_manifest.csv` (action `elevated`).
+
+### Security
+
+- The elevated process checks `ps/actions/elevated.ps1` against the fingerprint compiled into the plugin and runs the bytes it checked from memory; launcher and bootstrap are passed inline (`-EncodedCommand`), never from files; only task ids and Drive Cleanup's own paths reach them. PLAN.md §20, rule S3 reworded.
+
+## [1.1.0-beta.1] - 2026-11-23
+
+One command to free space; Claude proposes, you answer once. Still not run on a Windows PC: see TESTING.md §4.
+
+### Added
+
+- **`/drive-cleanup:free-space [target]`**: scans, picks what to clean (all class A, and class B only where the evidence is strong), proposes it, and verifies afterwards.
+- **Tool `propose_cleanup`**: Claude names findings, or categories and classes with an optional size cap; Claude Code's own dialog shows the person the real totals and largest items with Clean (Turn on and clean, when cleanup is off), Show the list, or Cancel. Checked by the same planner as the pane; protected items, a duplicate group's copy to keep and anything Drive Cleanup does not clean are refused. After a Cancel, new proposals are refused for 5 minutes.
+- **Tool `restore_quarantine`** and **`/drive-cleanup:undo-cleanup`**: restore a cleanup run after the person confirms.
+- **`run_deep_scan` `includeDuplicates`**: asks the person to turn on duplicate search, in place of a trip to Settings.
+
+### Changed
+
+- **Safety rule S5**: "only the person approves" now covers both the pane and Claude's proposal; in both, nothing runs without the person's answer in Claude Code's dialog, and never in `-p`. Purging a quarantine stays in the pane only. PLAN.md §19.
+- **Two commands instead of eight**: the other skills are no longer in the slash menu (`user-invocable: false`); Claude still uses them when asked.
+
 ## [1.0.0-beta.1] - 2026-10-31
 
 Every milestone of PLAN.md built. Tested off Windows; not yet run on a Windows PC: see TESTING.md.

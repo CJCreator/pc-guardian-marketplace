@@ -1,0 +1,25 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["eslint", "typescript", "unicorn", "oxc", "import", "promise", "node"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error",
+    "perf": "error",
+    "pedantic": "error"
+  },
+  "ignorePatterns": ["plugins/pc-guardian/dashboard/**", "plugins/pc-guardian/hooks/deps.js", "dev/types/**"],
+  "rules": {
+    "eslint/require-unicode-regexp": "off",
+    "eslint/no-await-in-loop": "off",
+    "unicorn/prefer-single-call": "off",
+    "eslint/max-lines-per-function": "off",
+    "eslint/max-lines": "off",
+    "import/max-dependencies": "off",
+    "unicorn/no-useless-undefined": [
+      "error",
+      {
+        "checkArguments": false
+      }
+    ]
+  }
+}

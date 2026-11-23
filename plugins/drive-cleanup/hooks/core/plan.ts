@@ -25,6 +25,9 @@ export type Plan =
 
 const refuse = (message: string): Plan => ({ status: 'refused', message })
 
+/** Whether a drive keeps 10% (at least 10 GiB) free after taking `needed` bytes. */
+const fits = (free: number, total: number, needed: number): boolean => free - needed >= Math.max(total * 0.1, 10 * GiB)
+
 /** Where quarantined files go: another fixed NTFS drive with room, else the system drive. */
 export function chooseQuarantineRoot(
   volume: RawVolume | null,
@@ -32,15 +35,18 @@ export function chooseQuarantineRoot(
   bytesFromSystemDrive: number,
 ): { status: 'ok'; root: string; drive: string } | { status: 'refused'; message: string } {
   const drives = (volume?.drives ?? []).filter(d => /^ntfs$/i.test(d.fileSystem) && /^[A-Za-z]:$/.test(d.letter))
-  const fits = (free: number, total: number, needed: number): boolean => free - needed >= Math.max(total * 0.1, 10 * GiB)
   let candidates = drives
-  if (setting !== 'auto') {
-    candidates = drives.filter(d => d.letter.toUpperCase() === setting.toUpperCase())
-    if (candidates.length === 0) return { status: 'refused', message: `The quarantine drive ${setting} was not found as a fixed NTFS drive. Choose another in Settings.` }
-  } else {
-    const others = drives.filter(d => !d.isSystem).sort((a, b) => b.freeBytes - a.freeBytes)
+  if (setting === 'auto') {
+    const others = drives.filter(d => !d.isSystem).toSorted((a, b) => b.freeBytes - a.freeBytes)
     const system = drives.filter(d => d.isSystem)
     candidates = [...others, ...system]
+  } else {
+    candidates = drives.filter(d => d.letter.toUpperCase() === setting.toUpperCase())
+    if (candidates.length === 0)
+      return {
+        status: 'refused',
+        message: `The quarantine drive ${setting} was not found as a fixed NTFS drive. Choose another in Settings.`,
+      }
   }
   for (const d of candidates) {
     // A move within the system drive is a rename and needs no space of its own.
@@ -86,9 +92,12 @@ export function planCleanup(input: PlanInput): Plan {
   for (const id of ids) {
     const f = byId.get(id)
     if (f === undefined) return refuse('The selection includes an item that is not in the current scan. Select again.')
-    if (f.class === 'protected' || f.protectedBy !== null) return refuse(`${f.path} is protected and cannot be cleaned.`)
+    if (f.class === 'protected' || f.protectedBy !== null)
+      return refuse(`${f.path} is protected and cannot be cleaned.`)
     if (f.action !== 'delete' && f.action !== 'quarantine') {
-      return refuse(`${f.path} is not cleaned by Drive Cleanup (${f.action === 'manual' ? 'use the manual steps' : f.action === 'pc_guardian' ? "use PC Guardian's cleanup" : 'kept'}).`)
+      return refuse(
+        `${f.path} is not cleaned by Drive Cleanup (${f.action === 'manual' ? 'use the manual steps' : f.action === 'pc_guardian' ? "use PC Guardian's cleanup" : 'kept'}).`,
+      )
     }
     if (f.cacheId !== undefined) {
       if (f.action !== 'delete') return refuse(`${f.path} is cleaned by hand only.`)
@@ -96,7 +105,8 @@ export function planCleanup(input: PlanInput): Plan {
       continue
     }
     if (f.action === 'delete' && f.class !== 'safe') return refuse(`${f.path} can only be moved to quarantine.`)
-    if (!f.isFolder && f.modifiedUtc === null) return refuse(`${f.path} has no recorded date, so it cannot be checked before acting.`)
+    if (!f.isFolder && f.modifiedUtc === null)
+      return refuse(`${f.path} has no recorded date, so it cannot be checked before acting.`)
     items.push({
       id: f.id,
       path: f.path,
@@ -119,7 +129,8 @@ export function planCleanup(input: PlanInput): Plan {
     groups.set(f.duplicate.groupId, g)
   }
   for (const g of groups.values()) {
-    if (g.selected > 0 && g.selected >= g.total) return refuse('Every copy of a duplicate group is selected. Keep at least one.')
+    if (g.selected > 0 && g.selected >= g.total)
+      return refuse('Every copy of a duplicate group is selected. Keep at least one.')
   }
 
   const quarantineBytes = items.filter(i => i.action === 'quarantine').reduce((s, i) => s + i.bytes, 0)
@@ -128,7 +139,11 @@ export function planCleanup(input: PlanInput): Plan {
   let quarantineRoot = ''
   if (quarantineBytes > 0) {
     const fromSystem = items
-      .filter(i => i.action === 'quarantine' && i.path.slice(0, 2).toUpperCase() === (input.volume?.systemDrive ?? 'C:').toUpperCase())
+      .filter(
+        i =>
+          i.action === 'quarantine' &&
+          i.path.slice(0, 2).toUpperCase() === (input.volume?.systemDrive ?? 'C:').toUpperCase(),
+      )
       .reduce((s, i) => s + i.bytes, 0)
     const chosen = chooseQuarantineRoot(input.volume, input.settings.quarantineDrive, fromSystem)
     if (chosen.status !== 'ok') return refuse(chosen.message)

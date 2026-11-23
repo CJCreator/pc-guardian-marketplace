@@ -1,6 +1,7 @@
 ---
 description: Check that PC Guardian can read this Windows machine (Windows version, PowerShell, display language, elevation). Read-only; changes nothing.
 allowed-tools: mcp__pc-guardian__self_check
+user-invocable: false
 ---
 
 Call the `mcp__pc-guardian__self_check` tool once. Do not guess any value it did not return.

@@ -1,7 +1,7 @@
 ---
 description: Turn the latest PC Guardian recommendations into a short, ordered plan of what to fix first.
-disable-model-invocation: true
 allowed-tools: mcp__pc-guardian__get_recommendations
+user-invocable: false
 ---
 
 Call `mcp__pc-guardian__get_recommendations` (page through with `offset` if `nextOffset` is not null). If there is no scan yet, suggest `/pc-guardian:audit`.

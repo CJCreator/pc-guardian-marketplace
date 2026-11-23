@@ -14,7 +14,7 @@ import type { ClassifyContext } from './types.ts'
  * insensitive for these purposes).
  */
 export function normalizePath(path: string): string {
-  let p = path.replace(/\//g, '\\')
+  let p = path.replaceAll('/', '\\')
   if (p.startsWith('\\\\?\\UNC\\')) p = `\\\\${p.slice(8)}`
   else if (p.startsWith('\\\\?\\') || p.startsWith('\\\\.\\')) p = p.slice(4)
   const isUnc = p.startsWith('\\\\')
@@ -54,8 +54,7 @@ export function extensionOf(path: string): string {
   return dot <= 0 ? '' : name.slice(dot).toLowerCase()
 }
 
-const join = (root: string, ...parts: string[]): string =>
-  [root.replace(/[\\/]+$/, ''), ...parts].join('\\')
+const join = (root: string, ...parts: string[]): string => [root.replace(/[\\/]+$/, ''), ...parts].join('\\')
 
 // ------------------------------------------------------------------ rules
 
@@ -88,14 +87,7 @@ const ROOT_SYSTEM_FILES = new Set([
 const SHARED_PROFILES = ['Default', 'Default User', 'Public', 'All Users'] as const
 
 const CREDENTIAL_FOLDERS = new Set(['.ssh', '.gnupg', '.aws', '.azure', '.kube', '.gcloud'])
-const CREDENTIAL_NAMES = new Set([
-  '.npmrc',
-  '.pypirc',
-  '.git-credentials',
-  '.netrc',
-  '_netrc',
-  '.pgpass',
-])
+const CREDENTIAL_NAMES = new Set(['.npmrc', '.pypirc', '.git-credentials', '.netrc', '_netrc', '.pgpass'])
 const CREDENTIAL_EXTENSIONS = new Set([
   '.pem',
   '.key',
@@ -152,6 +144,34 @@ const PROFILE_PROTECTED: readonly { parts: string[]; rule: string }[] = [
 ]
 
 /** `AppData\Local\Microsoft\Windows` is protected except these re-creatable caches. */
+/** Chromium browsers' data folders, under AppData\Local. */
+const CHROMIUM_DATA = [
+  ['Microsoft', 'Edge', 'User Data'],
+  ['Google', 'Chrome', 'User Data'],
+  ['BraveSoftware', 'Brave-Browser', 'User Data'],
+] as const
+/** Inside a Chromium profile (Default, Profile N), only these re-creatable cache folders are not protected. */
+const CHROMIUM_CACHE_PARTS = [['cache', 'cache_data'], ['code cache'], ['gpucache']] as const
+
+/** A browser's cache folder (or inside one): the only part of a browser profile Drive Cleanup may clean. */
+function isBrowserCache(p: string, ctx: ClassifyContext): boolean {
+  const local = join(ctx.userProfile, 'AppData', 'Local')
+  for (const parts of CHROMIUM_DATA) {
+    const data = normalizePath(join(local, ...parts))
+    if (!isUnder(p, data) || p === data) continue
+    const rel = p.slice(data.length + 1).split('\\')
+    const profile = rel[0] ?? ''
+    if (profile !== 'default' && !/^profile \d+$/.test(profile)) return false
+    return CHROMIUM_CACHE_PARTS.some(part => part.every((seg, i) => rel[i + 1] === seg))
+  }
+  const firefox = normalizePath(join(local, 'Mozilla', 'Firefox', 'Profiles'))
+  if (isUnder(p, firefox) && p !== firefox) {
+    const rel = p.slice(firefox.length + 1).split('\\')
+    return rel[1] === 'cache2'
+  }
+  return false
+}
+
 const WINDOWS_PROFILE_EXCEPTIONS = [['INetCache'], ['Explorer']] as const
 
 /**
@@ -187,16 +207,16 @@ export function protectedBy(path: string, ctx: ClassifyContext, isFolder = false
   if (isUnder(p, ctx.userProfile)) {
     const windowsData = join(ctx.userProfile, 'AppData', 'Local', 'Microsoft', 'Windows')
     if (isUnder(p, windowsData)) {
-      const isException = WINDOWS_PROFILE_EXCEPTIONS.some(parts =>
-        isUnder(p, join(windowsData, ...parts)),
-      )
+      const isException = WINDOWS_PROFILE_EXCEPTIONS.some(parts => isUnder(p, join(windowsData, ...parts)))
       if (!isException) return 'Windows profile data'
     }
     const isEditorCache = EDITOR_DATA.some(name =>
       EDITOR_CACHE_PARTS.some(part => isUnder(p, join(ctx.appData, name, part))),
     )
+    const isBrowserCacheFolder = isBrowserCache(p, ctx)
     for (const entry of PROFILE_PROTECTED) {
       if (isEditorCache && entry.rule === 'Editor data') continue
+      if (isBrowserCacheFolder && entry.rule === 'Browser profile') continue
       if (isUnder(p, join(ctx.userProfile, ...entry.parts))) return entry.rule
     }
   }

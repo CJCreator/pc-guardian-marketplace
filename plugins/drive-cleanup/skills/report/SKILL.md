@@ -1,7 +1,7 @@
 ---
 description: Write Drive Cleanup's audit reports for the latest deep scan (storage_audit.md, largest_files.csv, duplicate_files.csv, installers_and_archives.csv, cache_analysis.md, cleanup_recommendations.md, deletion_manifest.csv, final_cleanup_report.md) and give their folder.
-disable-model-invocation: true
 allowed-tools: mcp__drive-cleanup__generate_audit_reports mcp__drive-cleanup__get_scan_status
+user-invocable: false
 ---
 
 Call `mcp__drive-cleanup__generate_audit_reports` once. If it says there is no deep scan yet, say to run `/drive-cleanup:audit` first and stop.

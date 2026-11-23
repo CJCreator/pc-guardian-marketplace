@@ -10,10 +10,7 @@ const GB = 1024 ** 3
 const item = (win: RawWindows | null, id: RawWindowsItem['id']): RawWindowsItem | undefined =>
   win?.items.find(i => i.id === id && i.status === 'ok')
 
-export function windowsRecommendations(
-  volume: RawVolume | null,
-  win: RawWindows | null,
-): Recommendation[] {
+export function windowsRecommendations(volume: RawVolume | null, win: RawWindows | null): Recommendation[] {
   const out: Recommendation[] = []
   const system = volume?.drives.find(d => d.isSystem)
 
@@ -143,10 +140,7 @@ export function windowsRecommendations(
         title: 'Restore points use a lot of space',
         severity: 'info',
         evidence: `Restore points use ${sizeText(used)} (${percentText(used, system.totalBytes)} of ${system.letter}).`,
-        steps: [
-          'Open Control Panel > System > System Protection > Configure.',
-          'Lower "Max Usage" to 5–8 %.',
-        ],
+        steps: ['Open Control Panel > System > System Protection > Configure.', 'Lower "Max Usage" to 5–8 %.'],
         risk: 'Fewer restore points to go back to.',
         undo: 'Raise Max Usage again.',
         estimatedBytes: null,

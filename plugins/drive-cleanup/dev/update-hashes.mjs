@@ -7,14 +7,15 @@
 
 import { createHash } from 'node:crypto'
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname, join, relative, sep } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join, relative, sep } from 'node:path'
 
-const root = join(dirname(fileURLToPath(import.meta.url)), '..')
+const root = join(import.meta.dirname, '..')
 const psRoot = join(root, 'ps')
 const target = join(root, 'hooks', 'script-hashes.ts')
 
+/** @type {string[]} */
 const files = []
+/** @param {string} dir */
 const walk = dir => {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const full = join(dir, entry.name)
@@ -25,10 +26,13 @@ const walk = dir => {
 walk(psRoot)
 files.sort()
 
-const normalize = text => (text.startsWith('﻿') ? text.slice(1) : text).replace(/\r\n/g, '\n')
+/** @param {string} text */
+const normalize = text => (text.startsWith('﻿') ? text.slice(1) : text).replaceAll('\r\n', '\n')
 const lines = files.map(full => {
   const key = relative(psRoot, full).split(sep).join('/')
-  const hash = createHash('sha256').update(normalize(readFileSync(full, 'utf8')), 'utf8').digest('hex')
+  const hash = createHash('sha256')
+    .update(normalize(readFileSync(full, 'utf8')), 'utf8')
+    .digest('hex')
   return `  '${key}': '${hash}',`
 })
 

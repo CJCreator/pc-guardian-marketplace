@@ -1,9 +1,8 @@
-﻿// PC Guardian's session state: what the dashboard pane draws from.
+// PC Guardian's session state: what the dashboard pane draws from.
 // Mirrors PaneSummary and ScanProgress in packages/core/src/tools/views.ts;
 // the mod's typecheck fails if the two drift apart.
 
-export type GuardianCategory =
-  'performance' | 'startup' | 'storage' | 'browser' | 'security' | 'stability'
+export type GuardianCategory = 'performance' | 'startup' | 'storage' | 'browser' | 'security' | 'stability'
 export type GuardianBand = 'excellent' | 'good' | 'needs_attention' | 'critical'
 export type GuardianPriority = 'critical' | 'recommended' | 'optional'
 
@@ -29,13 +28,7 @@ export type GuardianSummary = {
 }
 
 export type GuardianNotCheckedReason =
-  | 'needs_elevation'
-  | 'unavailable'
-  | 'timeout'
-  | 'failed'
-  | 'disabled_by_user'
-  | 'unsupported_platform'
-  | 'privacy'
+  'needs_elevation' | 'unavailable' | 'timeout' | 'failed' | 'disabled_by_user' | 'unsupported_platform' | 'privacy'
 
 export type GuardianProgress = {
   kind: 'full' | 'retry'

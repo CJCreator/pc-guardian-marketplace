@@ -1,0 +1,25 @@
+{
+  // Mod code: runs in Claude Code's hooks environment (no DOM, no Node).
+  // Options from the header of dev/types/claude-code/index.d.ts.
+  "compilerOptions": {
+    "target": "es2023",
+    "lib": ["es2023"],
+    "types": [],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "jsx": "react",
+    "jsxFactory": "h",
+    "jsxFragmentFactory": "Fragment"
+  },
+  "include": [
+    "dev/types/claude-code",
+    "plugins/drive-cleanup/hooks",
+    "plugins/drive-cleanup/types",
+    "plugins/drive-cleanup/tests"
+  ]
+}

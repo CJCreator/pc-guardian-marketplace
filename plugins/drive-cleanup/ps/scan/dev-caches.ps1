@@ -1,5 +1,5 @@
-# Drive Cleanup - read-only. Measures known developer tool caches at their fixed
-# locations (never found by guessing folder names), and whether the tool that
+# Drive Cleanup - read-only. Measures known developer tool and browser caches at
+# their fixed locations (never found by guessing folder names), and whether the tool that
 # owns each is running. Sizes, counts and dates only; links are not followed;
 # nothing is opened, created or changed. The ids and roots here match
 # hooks/core/devcaches.ts and ps/actions/clean-cache.ps1.
@@ -16,6 +16,24 @@ $roaming = [string]$env:APPDATA
 $home_ = [string]$env:USERPROFILE
 
 $editorParts = @('Cache', 'CachedData', 'CachedExtensionVSIXs', 'Code Cache', 'GPUCache', 'logs')
+# Browser cache folders: in each profile (Default, Profile N) only Cache\Cache_Data,
+# Code Cache and GPUCache; for Firefox, only each local profile's cache2. History,
+# cookies, passwords, sessions and settings live elsewhere and are never listed.
+function Get-ChromiumCacheRoots([string]$dataDir) {
+    $roots = @()
+    if (-not [System.IO.Directory]::Exists($dataDir)) { return $roots }
+    foreach ($profileDir in @(Get-ChildItem -LiteralPath $dataDir -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq 'Default' -or $_.Name -like 'Profile *' })) {
+        foreach ($sub in @('Cache\Cache_Data', 'Code Cache', 'GPUCache')) { $roots += (Join-Path $profileDir.FullName $sub) }
+    }
+    return $roots
+}
+function Get-FirefoxCacheRoots([string]$local) {
+    $roots = @()
+    $profiles = Join-Path $local 'Mozilla\Firefox\Profiles'
+    if (-not [System.IO.Directory]::Exists($profiles)) { return $roots }
+    foreach ($profileDir in @(Get-ChildItem -LiteralPath $profiles -Directory -ErrorAction SilentlyContinue)) { $roots += (Join-Path $profileDir.FullName 'cache2') }
+    return $roots
+}
 $caches = @(
     @{ id = 'npm_cache'; roots = @(Join-Path $local 'npm-cache\_cacache'); owners = @('node') },
     @{ id = 'npm_npx'; roots = @(Join-Path $local 'npm-cache\_npx'); owners = @('node') },
@@ -33,7 +51,11 @@ $caches = @(
     @{ id = 'gradle_wrapper'; roots = @(Join-Path $home_ '.gradle\wrapper\dists'); owners = @('java', 'javaw') },
     @{ id = 'maven_repo'; roots = @(Join-Path $home_ '.m2\repository'); owners = @('java', 'javaw') },
     @{ id = 'nuget_packages'; roots = @(Join-Path $home_ '.nuget\packages'); owners = @('dotnet', 'devenv', 'MSBuild') },
-    @{ id = 'docker_data'; roots = @(Join-Path $local 'Docker\wsl'); owners = @('Docker Desktop', 'com.docker.backend') }
+    @{ id = 'docker_data'; roots = @(Join-Path $local 'Docker\wsl'); owners = @('Docker Desktop', 'com.docker.backend') },
+    @{ id = 'edge_cache'; roots = @(Get-ChromiumCacheRoots (Join-Path $local 'Microsoft\Edge\User Data')); owners = @('msedge') },
+    @{ id = 'chrome_cache'; roots = @(Get-ChromiumCacheRoots (Join-Path $local 'Google\Chrome\User Data')); owners = @('chrome') },
+    @{ id = 'brave_cache'; roots = @(Get-ChromiumCacheRoots (Join-Path $local 'BraveSoftware\Brave-Browser\User Data')); owners = @('brave') },
+    @{ id = 'firefox_cache'; roots = @(Get-FirefoxCacheRoots $local); owners = @('firefox') }
 )
 
 $running = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)

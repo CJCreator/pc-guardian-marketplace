@@ -1,8 +1,8 @@
 ---
 description: Explain one PC Guardian recommendation in depth (pass its id, or describe it).
 argument-hint: '<recommendation id or title>'
-disable-model-invocation: true
 allowed-tools: mcp__pc-guardian__get_recommendations
+user-invocable: false
 ---
 
 Explain one PC Guardian recommendation.

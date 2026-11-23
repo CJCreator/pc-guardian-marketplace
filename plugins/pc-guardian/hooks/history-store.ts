@@ -39,10 +39,7 @@ export async function loadHistoryIndex($: EngineInterface): Promise<HistoryIndex
   return parseHistoryIndex(await readDataJson($, HISTORY_INDEX_FILE))
 }
 
-export async function loadStoredScan(
-  $: EngineInterface,
-  entry: HistoryEntry,
-): Promise<StoredScan | undefined> {
+export async function loadStoredScan($: EngineInterface, entry: HistoryEntry): Promise<StoredScan | undefined> {
   const parsed = StoredScanSchema.safeParse(await readDataJson($, historySlotFile(entry.slot)))
   return parsed.success && parsed.data.snapshot.id === entry.id ? parsed.data : undefined
 }
@@ -53,19 +50,14 @@ export type SaveResult = { isSaved: boolean; detail: string; index: HistoryIndex
  * Updates a saved scan in place (a re-checked area merged in): its own slot,
  * then the index. Undefined when the scan is not in history.
  */
-export async function replaceScanInHistory(
-  $: EngineInterface,
-  scan: StoredScan,
-): Promise<SaveResult | undefined> {
+export async function replaceScanInHistory($: EngineInterface, scan: StoredScan): Promise<SaveResult | undefined> {
   const current = await loadHistoryIndex($)
   const plan = planHistoryReplace(current, scan)
   if (plan === undefined) return undefined
   const written = await writeDataFile($, historySlotFile(plan.slot), JSON.stringify(scan))
-  if (written.status !== 'written')
-    return { isSaved: false, detail: written.detail, index: current }
+  if (written.status !== 'written') return { isSaved: false, detail: written.detail, index: current }
   const indexed = await writeDataFile($, HISTORY_INDEX_FILE, JSON.stringify(plan.index))
-  if (indexed.status !== 'written')
-    return { isSaved: false, detail: indexed.detail, index: current }
+  if (indexed.status !== 'written') return { isSaved: false, detail: indexed.detail, index: current }
   return { isSaved: true, detail: written.path, index: plan.index }
 }
 
@@ -74,23 +66,17 @@ export async function replaceScanInHistory(
  * retention are cleared, then the index, so the index only ever names
  * complete files.
  */
-export async function saveScanToHistory(
-  $: EngineInterface,
-  scan: StoredScan,
-  retention?: number,
-): Promise<SaveResult> {
+export async function saveScanToHistory($: EngineInterface, scan: StoredScan, retention?: number): Promise<SaveResult> {
   const current = await loadHistoryIndex($)
   const plan = planHistoryWrite(current, scan, retention)
 
   const written = await writeDataFile($, historySlotFile(plan.slot), JSON.stringify(scan))
-  if (written.status !== 'written')
-    return { isSaved: false, detail: written.detail, index: current }
+  if (written.status !== 'written') return { isSaved: false, detail: written.detail, index: current }
 
   for (const slot of plan.slotsToClear) {
     await writeDataFile($, historySlotFile(slot), JSON.stringify(CLEARED_SLOT))
   }
   const indexed = await writeDataFile($, HISTORY_INDEX_FILE, JSON.stringify(plan.index))
-  if (indexed.status !== 'written')
-    return { isSaved: false, detail: indexed.detail, index: current }
+  if (indexed.status !== 'written') return { isSaved: false, detail: indexed.detail, index: current }
   return { isSaved: true, detail: written.path, index: plan.index }
 }

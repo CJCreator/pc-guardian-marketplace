@@ -8,18 +8,11 @@ import {
 } from './deps.js'
 import { cancelActiveAudit, performAudit, recheckArea } from './audit.ts'
 import { previewCleanup, restoreStartup, runCleanup, startCleanupRequest } from './cleanup.ts'
-import {
-  isDashboardRunning,
-  pushNotice,
-  pushState,
-  requestLaunchUrl,
-  setDashboardLink,
-} from './dashboard-link.ts'
+import { isDashboardRunning, pushNotice, pushState, requestLaunchUrl, setDashboardLink } from './dashboard-link.ts'
 import { startDashboardServer, type DashboardProcess } from './safe-shell.ts'
 import { saveSettings } from './settings-store.ts'
 
-export type BrowserDashboard =
-  { status: 'ok'; url: string } | { status: 'unavailable'; detail: string }
+export type BrowserDashboard = { status: 'ok'; url: string } | { status: 'unavailable'; detail: string }
 
 /** How long a starting server may take to say it is ready (well within a hook's budget). */
 const READY_TIMEOUT_MS = 8_000
@@ -46,6 +39,8 @@ export async function openBrowserDashboard($: EngineInterface): Promise<BrowserD
     : { status: 'ok', url }
 }
 
+const noop = (): void => {}
+
 /** Starts the server; undefined once it is ready, else why it is not. */
 async function startServer($: EngineInterface): Promise<BrowserDashboard | undefined> {
   const appData = await $.env.get('APPDATA')
@@ -60,7 +55,7 @@ async function startServer($: EngineInterface): Promise<BrowserDashboard | undef
   })
   if (started.status !== 'ok') return started
 
-  let markReady: (isReady: boolean) => void = () => undefined
+  let markReady: (isReady: boolean) => void = noop
   const ready = new Promise<boolean>(resolve => {
     markReady = resolve
   })
@@ -164,7 +159,7 @@ async function handleRequest($: EngineInterface, request: DashboardRequest): Pro
     case 'cleanup_restore': {
       const { startup } = request
       startCleanupRequest($, () => restoreStartup($, startup, 'dashboard'))
-      return
+      break
     }
   }
 }

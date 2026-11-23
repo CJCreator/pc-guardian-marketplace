@@ -1,0 +1,75 @@
+name: CI
+
+# One required job, `check`. It runs every check at once (bun run ci), so
+# nothing waits on anything else. The merge queue runs the same full suite
+# before anything reaches main.
+on:
+  pull_request:
+  merge_group:
+  push:
+    branches: [main]
+
+# A new commit on a PR cancels that PR's run in progress. Main and the merge
+# queue are never cancelled.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  # Job budget: setup plus checks. Above this the job fails (see the last step).
+  JOB_BUDGET_SECONDS: 35
+
+jobs:
+  check:
+    # Switch to a Blacksmith label (blacksmith-4vcpu-ubuntu-2404) once the
+    # Blacksmith app is installed on this repository.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - name: Start the clock
+        run: echo "JOB_T0=$(date +%s%N)" >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          filter: blob:none
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      # node_modules itself is cached, keyed on the lockfile. Only main writes
+      # the cache; PRs and the merge queue read main's, so they hit it.
+      - name: Restore node_modules
+        id: nm
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: node_modules
+          key: nm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', '.bun-version') }}
+
+      - name: Install
+        if: steps.nm.outputs.cache-hit != 'true'
+        run: bun install --frozen-lockfile
+
+      - name: Save node_modules
+        if: steps.nm.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: node_modules
+          key: ${{ steps.nm.outputs.cache-primary-key }}
+
+      - name: Check
+        run: bun run ci
+
+      - name: Job budget
+        if: always()
+        run: |
+          ms=$(( ($(date +%s%N) - JOB_T0) / 1000000 ))
+          echo "Job took ${ms} ms (budget ${JOB_BUDGET_SECONDS} s)" | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ "$ms" -gt $(( JOB_BUDGET_SECONDS * 1000 )) ]; then
+            echo "::error::Job took ${ms} ms, over its ${JOB_BUDGET_SECONDS} s budget"
+            exit 1
+          fi

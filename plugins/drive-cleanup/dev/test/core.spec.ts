@@ -1,5 +1,5 @@
-// Unit tests for Drive Cleanup's core (pure logic). Run from the plugin folder:
-//   node --experimental-strip-types --test dev/test/*.spec.ts
+// Unit tests for Drive Cleanup's core (pure logic). Run from the repository root:
+//   bun test
 
 import assert from 'node:assert/strict'
 import { readFileSync, readdirSync } from 'node:fs'
@@ -9,7 +9,7 @@ import { classifyCandidate, classifyScan } from '../../hooks/core/classify.ts'
 import { isUnder, normalizePath, protectedBy } from '../../hooks/core/paths.ts'
 import { windowsRecommendations } from '../../hooks/core/recommend.ts'
 import { buildReports, csv, csvCell } from '../../hooks/core/reports.ts'
-import { parseOutput, RawVolumeCheck, RawWalkCheck, RawWindowsCheck } from '../../hooks/core/validate.ts'
+import { type Check, parseOutput, RawVolumeCheck, RawWalkCheck, RawWindowsCheck } from '../../hooks/core/validate.ts'
 import { candidate, ctx, NOW, PROFILE, volume, walk, windows } from './fixtures.ts'
 
 const PLUGIN = join(import.meta.dirname, '..', '..')
@@ -82,7 +82,10 @@ describe('classification (PLAN.md §5)', () => {
     assert.equal(f?.action, 'quarantine')
   })
   it('anything in a project is protected, whatever its kind', () => {
-    const f = classifyCandidate(candidate({ kind: 'archive', path: `${PROFILE}\\src\\app\\dist.zip`, inProject: true }), c)
+    const f = classifyCandidate(
+      candidate({ kind: 'archive', path: `${PROFILE}\\src\\app\\dist.zip`, inProject: true }),
+      c,
+    )
     assert.equal(f?.class, 'protected')
     assert.equal(f?.action, 'none')
   })
@@ -92,23 +95,40 @@ describe('classification (PLAN.md §5)', () => {
   })
   it('an archive with a same-named folder is an extracted pair, low confidence', () => {
     const f = classifyCandidate(
-      candidate({ kind: 'archive', path: `${PROFILE}\\Downloads\\tool.zip`, extractedFolder: `${PROFILE}\\Downloads\\tool` }),
+      candidate({
+        kind: 'archive',
+        path: `${PROFILE}\\Downloads\\tool.zip`,
+        extractedFolder: `${PROFILE}\\Downloads\\tool`,
+      }),
       c,
     )
     assert.equal(f?.category, 'extracted_pair')
     assert.equal(f?.confidence, 'low')
   })
   it('crash dumps: safe in CrashDumps, review elsewhere', () => {
-    const a = classifyCandidate(candidate({ kind: 'crash_dump', path: `${PROFILE}\\AppData\\Local\\CrashDumps\\x.dmp` }), c)
+    const a = classifyCandidate(
+      candidate({ kind: 'crash_dump', path: `${PROFILE}\\AppData\\Local\\CrashDumps\\x.dmp` }),
+      c,
+    )
     const b = classifyCandidate(candidate({ kind: 'crash_dump', path: `${PROFILE}\\Desktop\\debug.dmp` }), c)
     assert.deepEqual([a?.class, a?.action], ['safe', 'delete'])
     assert.deepEqual([b?.class, b?.action], ['review', 'quarantine'])
   })
   it('logs: safe only in a known app log folder, and only when old', () => {
-    const known = classifyCandidate(candidate({ kind: 'log', path: `${PROFILE}\\AppData\\Roaming\\Zoom\\logs\\zoom.log` }), c)
-    const unknown = classifyCandidate(candidate({ kind: 'log', path: `${PROFILE}\\AppData\\Roaming\\Acme\\data\\x.log` }), c)
+    const known = classifyCandidate(
+      candidate({ kind: 'log', path: `${PROFILE}\\AppData\\Roaming\\Zoom\\logs\\zoom.log` }),
+      c,
+    )
+    const unknown = classifyCandidate(
+      candidate({ kind: 'log', path: `${PROFILE}\\AppData\\Roaming\\Acme\\data\\x.log` }),
+      c,
+    )
     const recent = classifyCandidate(
-      candidate({ kind: 'log', path: `${PROFILE}\\AppData\\Roaming\\Zoom\\logs\\new.log`, modifiedUtc: new Date(NOW - 86_400_000).toISOString() }),
+      candidate({
+        kind: 'log',
+        path: `${PROFILE}\\AppData\\Roaming\\Zoom\\logs\\new.log`,
+        modifiedUtc: new Date(NOW - 86_400_000).toISOString(),
+      }),
       c,
     )
     assert.equal(known?.class, 'safe')
@@ -116,9 +136,17 @@ describe('classification (PLAN.md §5)', () => {
     assert.equal(recent, undefined)
   })
   it('Temp folders: safe when old, not listed when recent', () => {
-    const old = classifyCandidate(candidate({ kind: 'temp_extract', path: `${PROFILE}\\AppData\\Local\\Temp\\7zS01`, isFolder: true }), c)
+    const old = classifyCandidate(
+      candidate({ kind: 'temp_extract', path: `${PROFILE}\\AppData\\Local\\Temp\\7zS01`, isFolder: true }),
+      c,
+    )
     const recent = classifyCandidate(
-      candidate({ kind: 'temp_extract', path: `${PROFILE}\\AppData\\Local\\Temp\\7zS02`, isFolder: true, modifiedUtc: new Date(NOW).toISOString() }),
+      candidate({
+        kind: 'temp_extract',
+        path: `${PROFILE}\\AppData\\Local\\Temp\\7zS02`,
+        isFolder: true,
+        modifiedUtc: new Date(NOW).toISOString(),
+      }),
       c,
     )
     assert.equal(old?.class, 'safe')
@@ -127,21 +155,31 @@ describe('classification (PLAN.md §5)', () => {
   it('last-access dates are dropped when Windows does not record them', () => {
     const f = classifyCandidate(candidate({ kind: 'old_download', path: `${PROFILE}\\Downloads\\a.pdf` }), c)
     assert.equal(f?.accessedUtc, null)
-    const g = classifyCandidate(candidate({ kind: 'old_download', path: `${PROFILE}\\Downloads\\a.pdf` }), ctx({ lastAccessTrusted: true }))
+    const g = classifyCandidate(
+      candidate({ kind: 'old_download', path: `${PROFILE}\\Downloads\\a.pdf` }),
+      ctx({ lastAccessTrusted: true }),
+    )
     assert.notEqual(g?.accessedUtc, null)
   })
-  it('Temp files are never cleaned here: PC Guardian or Windows does it', () => {
-    const without = classifyScan({ walk: walk(), windows: null }, c).findings.find(f => f.category === 'user_temp')
-    const withPcg = classifyScan({ walk: walk(), windows: null }, ctx({ isPcGuardianInstalled: true })).findings.find(f => f.category === 'user_temp')
-    assert.equal(without?.action, 'manual')
-    assert.equal(withPcg?.action, 'pc_guardian')
+  it('Temp files are cleaned here, by the cache script with its 7-day rule, with or without PC Guardian', () => {
+    for (const context of [c, ctx({ isPcGuardianInstalled: true })]) {
+      const temp = classifyScan({ walk: walk(), windows: null }, context).findings.find(f => f.category === 'user_temp')
+      assert.deepEqual([temp?.class, temp?.action, temp?.cacheId], ['safe', 'delete', 'user_temp'])
+      assert.match(temp?.reason ?? '', /7 days/)
+    }
   })
-  it('Windows-managed space is manual, never deleted by Drive Cleanup', () => {
+  it('Windows-managed space is manual; the Recycle Bin is its own cleanable item', () => {
     const scan = classifyScan({ walk: null, windows: windows() }, c)
     const update = scan.findings.find(f => f.evidence.rule === 'windows_update_cache')
     assert.equal(update?.action, 'manual')
     assert.ok(!scan.findings.some(f => f.path.endsWith('hiberfil.sys')))
-    assert.equal(scan.recoverable.manualBytes, 3 * 1024 ** 3 + 500 * 1024 ** 2)
+    const bin = scan.findings.find(f => f.evidence.rule === 'windows_recycle_bin')
+    assert.deepEqual(
+      [bin?.category, bin?.class, bin?.action, bin?.cacheId],
+      ['recycle_bin', 'safe', 'delete', 'recycle_bin'],
+    )
+    assert.match(bin?.reason ?? '', /for good/)
+    assert.equal(scan.recoverable.manualBytes, 3 * 1024 ** 3)
   })
   it('totals add up and mark capped kinds', () => {
     const cands = [
@@ -152,7 +190,8 @@ describe('classification (PLAN.md §5)', () => {
     const scan = classifyScan({ walk: walk(cands), windows: null }, c)
     const inst = scan.totals.find(t => t.category === 'installer' && t.class === 'review')
     assert.deepEqual([inst?.count, inst?.bytes, inst?.isCapped], [2, 300, true])
-    assert.equal(scan.findings[0]?.category, 'user_temp') // largest first
+    // Largest first.
+    assert.equal(scan.findings[0]?.category, 'user_temp')
   })
   it('a duplicate candidate path is listed once', () => {
     const a = candidate({ kind: 'installer', path: `${PROFILE}\\Downloads\\a.exe` })
@@ -163,11 +202,12 @@ describe('classification (PLAN.md §5)', () => {
 
 describe('validation of script output', () => {
   it('accepts what the scripts print', () => {
-    for (const [check, data] of [
+    const cases: [Check<unknown>, unknown][] = [
       [RawVolumeCheck, volume()],
       [RawWalkCheck, walk([candidate({ kind: 'installer', path: 'C:\\x.exe' })])],
       [RawWindowsCheck, windows()],
-    ] as const) {
+    ]
+    for (const [check, data] of cases) {
       const parsed = parseOutput(check, `\uFEFF${JSON.stringify(data)}\r\n`, 'x.ps1')
       assert.equal(parsed.status, 'ok', JSON.stringify(parsed))
     }
@@ -181,7 +221,10 @@ describe('validation of script output', () => {
   it('refuses unknown keys, negative sizes and bad kinds', () => {
     assert.equal(parseOutput(RawVolumeCheck, JSON.stringify({ ...volume(), extra: 1 }), 'v').status, 'not_checked')
     const w = walk()
-    assert.equal(parseOutput(RawWalkCheck, JSON.stringify({ ...w, totals: { ...w.totals, bytes: -1 } }), 'w').status, 'not_checked')
+    assert.equal(
+      parseOutput(RawWalkCheck, JSON.stringify({ ...w, totals: { ...w.totals, bytes: -1 } }), 'w').status,
+      'not_checked',
+    )
     const bad = walk([{ ...candidate({ kind: 'installer', path: 'C:\\x' }), kind: 'everything' as 'installer' }])
     assert.equal(parseOutput(RawWalkCheck, JSON.stringify(bad), 'w').status, 'not_checked')
     assert.equal(parseOutput(RawWalkCheck, 'not json', 'w').status, 'not_checked')
@@ -217,14 +260,17 @@ describe('reports', () => {
       recommendations: windowsRecommendations(volume(), windows()),
       ctx: c,
     })
-    assert.deepEqual(files.map(f => f.name), [
-      'storage_audit.md',
-      'largest_files.csv',
-      'installers_and_archives.csv',
-      'cleanup_recommendations.md',
-      'cache_analysis.md',
-      'duplicate_files.csv',
-    ])
+    assert.deepEqual(
+      files.map(f => f.name),
+      [
+        'storage_audit.md',
+        'largest_files.csv',
+        'installers_and_archives.csv',
+        'cleanup_recommendations.md',
+        'cache_analysis.md',
+        'duplicate_files.csv',
+      ],
+    )
     const largest = files[1]?.text ?? ''
     assert.ok(largest.includes('"C:\\pagefile.sys"') && largest.includes('"protected"'))
     assert.ok(largest.includes(`"${PROFILE}\\Videos\\holiday=1+1.mp4"`))
@@ -236,11 +282,11 @@ describe('reports', () => {
 
 describe('Windows recommendations (PLAN.md §8)', () => {
   it('suggests Storage Sense, Update cleanup and the hibernation file', () => {
-    const ids = windowsRecommendations(volume(), windows()).map(r => r.id)
-    assert.ok(ids.includes('storage_sense_off'))
-    assert.ok(ids.includes('windows_update_cache'))
-    assert.ok(ids.includes('hibernation_file'))
-    assert.ok(!ids.includes('low_free_space'))
+    const ids = new Set(windowsRecommendations(volume(), windows()).map(r => r.id))
+    assert.ok(ids.has('storage_sense_off'))
+    assert.ok(ids.has('windows_update_cache'))
+    assert.ok(ids.has('hibernation_file'))
+    assert.ok(!ids.has('low_free_space'))
   })
   it('flags low free space', () => {
     const v = volume()
@@ -262,10 +308,34 @@ describe('scan scripts (S1, S3)', () => {
         .filter(line => !line.trim().startsWith('#'))
         .join('\n')
       const forbidden = [
-        /Remove-Item/i, /Move-Item/i, /Copy-Item/i, /Rename-Item/i, /New-Item/i, /Set-Content/i, /Add-Content/i,
-        /Out-File/i, /Set-ItemProperty/i, /New-ItemProperty/i, /Remove-ItemProperty/i, /Clear-/i, /Stop-Process/i,
-        /Start-Process/i, /Invoke-Expression/i, /\biex\b/i, /\.Delete\(/, /\.MoveTo\(/, /\.CopyTo\(/, /\.Create\(/,
-        /WriteAll/, /\.OpenWrite\(/, /\.Open\(/, /File\]::Open/, /\s>>?\s/, /Set-Acl/i, /Invoke-WebRequest/i, /Net\.WebClient/i,
+        /Remove-Item/i,
+        /Move-Item/i,
+        /Copy-Item/i,
+        /Rename-Item/i,
+        /New-Item/i,
+        /Set-Content/i,
+        /Add-Content/i,
+        /Out-File/i,
+        /Set-ItemProperty/i,
+        /New-ItemProperty/i,
+        /Remove-ItemProperty/i,
+        /Clear-/i,
+        /Stop-Process/i,
+        /Start-Process/i,
+        /Invoke-Expression/i,
+        /\biex\b/i,
+        /\.Delete\(/,
+        /\.MoveTo\(/,
+        /\.CopyTo\(/,
+        /\.Create\(/,
+        /WriteAll/,
+        /\.OpenWrite\(/,
+        /\.Open\(/,
+        /File\]::Open/,
+        /\s>>?\s/,
+        /Set-Acl/i,
+        /Invoke-WebRequest/i,
+        /Net\.WebClient/i,
       ]
       for (const pattern of forbidden) assert.doesNotMatch(text, pattern, `${file} matches ${String(pattern)}`)
     })

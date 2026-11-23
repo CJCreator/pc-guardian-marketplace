@@ -145,7 +145,7 @@ async function performScan($: EngineInterface, only: StepId | undefined): Promis
       state,
       startedAt,
       finishedAt: state === 'running' ? null : Date.now(),
-      steps: steps.map(toDcStep),
+      steps: steps.map(step => toDcStep(step)),
       message,
     }))
   }
@@ -153,7 +153,7 @@ async function performScan($: EngineInterface, only: StepId | undefined): Promis
   if (only === undefined) await writeDataFile($, DONE_FILE, '[]')
   await publish('running', 'Starting… The walk of the drive takes a few minutes.')
   $.ui.status('Drive Cleanup: scanning (read-only)…')
-  void $.ui.open({ id: PANE_ID, title: 'Drive Cleanup' }).catch(() => undefined)
+  void $.ui.open({ id: PANE_ID, title: 'Drive Cleanup' }).catch(() => {})
 
   try {
     for (const step of steps) {
@@ -196,13 +196,17 @@ async function performScan($: EngineInterface, only: StepId | undefined): Promis
           text = JSON.stringify(data)
         }
         const written = await writeDataFile($, RAW_FILE[step.id], text)
-        if (written.status !== 'written') {
-          step.state = 'not_checked'
-          step.notChecked = { status: 'not_checked', reason: 'failed', detail: `Measured but not saved: ${written.detail}` }
-        } else {
+        if (written.status === 'written') {
           step.state = 'ok'
           step.notChecked = null
           step.isTruncated = isTruncatedOutput(data)
+        } else {
+          step.state = 'not_checked'
+          step.notChecked = {
+            status: 'not_checked',
+            reason: 'failed',
+            detail: `Measured but not saved: ${written.detail}`,
+          }
         }
       } else {
         step.state = 'not_checked'
@@ -373,13 +377,21 @@ export function summaryOf(scan: LoadedScan, lastAuditFolder: string | null): DcS
   return {
     scanId: scan.meta.scanId,
     createdAt: scan.meta.createdAt,
-    drive: system === undefined ? null : { letter: system.letter, totalBytes: system.totalBytes, freeBytes: system.freeBytes },
+    drive:
+      system === undefined
+        ? null
+        : { letter: system.letter, totalBytes: system.totalBytes, freeBytes: system.freeBytes },
     recoverable: scan.classified.recoverable,
     top: scan.classified.totals
       .filter(t => t.class !== 'protected')
-      .sort((a, b) => b.bytes - a.bytes)
+      .toSorted((a, b) => b.bytes - a.bytes)
       .slice(0, 4)
-      .map(t => ({ label: CATEGORY_LABEL[t.category], className: CLASS_LABEL[t.class], bytes: t.bytes, count: t.count })),
+      .map(t => ({
+        label: CATEGORY_LABEL[t.category],
+        className: CLASS_LABEL[t.class],
+        bytes: t.bytes,
+        count: t.count,
+      })),
     isPartial: scan.meta.steps.some(s => (s.state !== 'ok' && s.notChecked?.reason !== 'disabled') || s.isTruncated),
     lastAuditFolder,
   }
@@ -393,7 +405,13 @@ export async function setLastAuditFolder($: EngineInterface, folder: string): Pr
   await update($, summaryAtom, current => (current === null ? null : { ...current, lastAuditFolder: folder }))
 }
 
-type HistoryEntry = { scanId: string; createdAt: string; freeBytes: number | null; safeBytes: number; reviewBytes: number }
+type HistoryEntry = {
+  scanId: string
+  createdAt: string
+  freeBytes: number | null
+  safeBytes: number
+  reviewBytes: number
+}
 
 async function recordHistory($: EngineInterface, scan: LoadedScan): Promise<void> {
   let list: HistoryEntry[] = []

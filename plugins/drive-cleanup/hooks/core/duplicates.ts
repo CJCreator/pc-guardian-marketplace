@@ -123,7 +123,10 @@ export function duplicateFindings(hash: RawHash, ctx: ClassifyContext): Finding[
         reason: isKeeper
           ? `Suggested folder to keep (${keeper.reason}); ${String(group.folders.length - 1)} other folder(s) hold the same files.`
           : `Holds the same ${String(group.fileCount)} files (by name and SHA-256) as ${parentPath(group.folders[keeper.index] ?? '')}\\${baseName(group.folders[keeper.index] ?? '')}.`,
-        evidence: { rule: 'folder_signature_match', values: { signature: group.signature, folders: group.folders.length } },
+        evidence: {
+          rule: 'folder_signature_match',
+          values: { signature: group.signature, folders: group.folders.length },
+        },
         confidence: 'high',
         protectedBy: rule,
         duplicate: { groupId, sha256: group.signature, isSuggestedKeeper: isKeeper, keeperReason: keeper.reason },
@@ -149,7 +152,7 @@ export function mergeHash(previous: RawHash, next: RawHash): RawHash {
     skippedLocked: previous.skippedLocked + next.skippedLocked,
     skippedCloud: Math.max(previous.skippedCloud, next.skippedCloud),
     groups: [...groups.values()]
-      .sort((a, b) => b.bytes * (b.files.length - 1) - a.bytes * (a.files.length - 1))
+      .toSorted((a, b) => b.bytes * (b.files.length - 1) - a.bytes * (a.files.length - 1))
       .slice(0, 4000),
     folderGroups: [...folders.values()].slice(0, 5000),
   }

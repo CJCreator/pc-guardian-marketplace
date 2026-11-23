@@ -1,7 +1,7 @@
 ---
 description: After a Drive Cleanup cleanup - measures free space again, checks developer tools, projects and quarantined files are intact, and writes final_cleanup_report.md and the deletion manifest.
-disable-model-invocation: true
 allowed-tools: mcp__drive-cleanup__verify_cleanup mcp__drive-cleanup__get_quarantine
+user-invocable: false
 ---
 
 Call `mcp__drive-cleanup__verify_cleanup` once (read-only; up to a few minutes), then `mcp__drive-cleanup__get_quarantine`.

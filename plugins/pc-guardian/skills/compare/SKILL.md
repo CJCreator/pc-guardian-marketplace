@@ -1,8 +1,8 @@
 ---
 description: Compare the latest PC Guardian scan with the previous one (or two chosen scans) and explain what changed.
 argument-hint: '[fromScanId] [toScanId]'
-disable-model-invocation: true
 allowed-tools: mcp__pc-guardian__compare_scans mcp__pc-guardian__get_scan_history
+user-invocable: false
 ---
 
 Compare two PC Guardian scans.

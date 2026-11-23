@@ -1,17 +1,11 @@
 {
   "name": "drive-cleanup",
-  "version": "1.0.0-beta.1",
-  "description": "Deep C: drive audit and cleanup for Windows: duplicates by SHA-256, old installers and archives, developer caches, crash dumps, logs, leftovers, large old files. Scans only read; you approve each item, personal files go to a restorable quarantine, and every change is logged.",
+  "version": "1.4.0-beta.1",
+  "description": "Deep C: drive audit and cleanup for Windows: duplicates by SHA-256, old installers and archives, developer caches, crash dumps, logs, leftovers, large old files. Scans only read; Claude proposes what to clean and nothing changes until you answer yes; personal files go to a restorable quarantine, and every change is logged.",
   "author": {
     "name": "Techgramam"
   },
   "license": "SEE LICENSE IN LICENSE",
-  "keywords": [
-    "windows",
-    "storage",
-    "cleanup",
-    "duplicates",
-    "quarantine"
-  ],
+  "keywords": ["windows", "storage", "cleanup", "duplicates", "quarantine"],
   "types": "./types/index.d.ts"
 }

@@ -11,25 +11,36 @@ type Files = Map<string, string>
 
 type World = { scriptText?: string; registered?: string[] }
 
+const windowsSpelling = (path: string): string => path.replace(/^.*?(?=[A-Za-z]:\\)/, '')
+
 /**
  * An in-memory file system, and a record of processes started. The kit hands
  * hooks paths resolved against its own working directory, so a Windows path
  * arrives prefixed; `realPath` answers it as Windows would spell it.
  */
 function world(on: On, files: Files, runs: string[][], opts: World = {}): void {
-  const windowsSpelling = (path: string): string => path.replace(/^.*?(?=[A-Za-z]:\\)/, '')
-  on('fs.exists', (_, e) => ({ value: files.has(e.path) || [...files.keys()].some(k => k.startsWith(`${e.path}\\`)) }))
+  // Keys are kept as Windows spells them, so a test can seed files by their Windows path.
+  const key = windowsSpelling
+  on('fs.exists', (_, e) => ({
+    value: files.has(key(e.path)) || [...files.keys()].some(k => k.startsWith(`${key(e.path)}\\`)),
+  }))
   on('fs.stat', (_, e) => ({
-    value: { kind: files.has(e.path) ? 'file' : 'dir', size: 0, mtimeMs: 0, isLink: false, realPath: windowsSpelling(e.path) },
+    value: {
+      kind: files.has(key(e.path)) ? 'file' : 'dir',
+      size: 0,
+      mtimeMs: 0,
+      isLink: false,
+      realPath: windowsSpelling(e.path),
+    },
   }))
   on('fs.read', (_, e) => {
     if (opts.scriptText !== undefined && e.path.endsWith('.ps1')) return { value: opts.scriptText }
-    const text = files.get(e.path)
+    const text = files.get(key(e.path))
     if (text === undefined) throw new Error('ENOENT')
     return { value: text }
   })
   on('fs.write', (_, e) => {
-    files.set(e.path, e.text)
+    files.set(key(e.path), e.text)
     return { value: undefined }
   })
   on('process.run', (_, e) => {
@@ -50,7 +61,7 @@ const textOf = (r: unknown): string => {
   return typeof result === 'string' ? result : JSON.stringify(r)
 }
 
-test('registers its read-only tools, and none that cleans', async ($, on) => {
+test('registers its tools: two that ask the person, none that purges or changes settings', async ($, on) => {
   const names: string[] = []
   world(on, new Map(), [], { registered: names })
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
@@ -68,9 +79,11 @@ test('registers its read-only tools, and none that cleans', async ($, on) => {
     'get_quarantine',
     'get_settings',
     'verify_cleanup',
+    'propose_cleanup',
+    'restore_quarantine',
     'open_pane',
   ])
-  expect(names.some(n => /clean_|delete|remove|purge|restore|move|quarantine_|set_/.test(n))).toBe(false)
+  expect(names.some(n => /delete|remove|purge|move|set_|clean_|enable/.test(n))).toBe(false)
 })
 
 test('away from Windows, the scan runs nothing and says why', async ($, on) => {
@@ -158,7 +171,7 @@ test('Review without a scan asks for one; Settings start with everything off', a
     await ui.press({ key: 'tab-settings' })
     expect((await ui.find({ type: 'Text', text: /Cleanup:/ }))?.text).toContain('off')
     expect((await ui.find({ type: 'Text', text: /Duplicate search/ }))?.text).toContain('off')
-    expect((await ui.find({ type: 'Text', text: /Only you can change these/ }))).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /Only you can change these/ })).toBeDefined()
     await ui.press({ key: 'tab-overview' })
     await ui.unmount()
   }
@@ -182,5 +195,131 @@ test('Claude can read settings and quarantine, never change them', async ($, on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   expect(textOf(await $.tool.call({ tool: 'mcp__drive-cleanup__get_settings' }))).toContain('Cleanup off')
   expect(textOf(await $.tool.call({ tool: 'mcp__drive-cleanup__get_quarantine' }))).toContain('No cleanups yet')
-  expect(textOf(await $.tool.call({ tool: 'mcp__drive-cleanup__get_dev_caches' }))).toContain('There is no deep scan yet')
+  expect(textOf(await $.tool.call({ tool: 'mcp__drive-cleanup__get_dev_caches' }))).toContain(
+    'There is no deep scan yet',
+  )
+})
+
+const DATA = `${APPDATA}\\techgramam-drive-cleanup`
+const MiB = 1024 ** 2
+
+/** A finished scan of one step: an npm cache (class A) and the VS Code cache. */
+function seedScan(files: Files): void {
+  const now = new Date().toISOString()
+  files.set(
+    `${DATA}\\scans\\latest\\meta.json`,
+    JSON.stringify({
+      scanId: 'scan-1',
+      createdAt: now,
+      finishedAt: now,
+      isPcGuardianInstalled: false,
+      dataFolder: DATA,
+      steps: [
+        {
+          id: 'devcaches',
+          label: 'Developer caches',
+          state: 'ok',
+          durationMs: 10,
+          notChecked: null,
+          isTruncated: false,
+        },
+      ],
+    }),
+  )
+  files.set(
+    `${DATA}\\scans\\latest\\devcaches.json`,
+    JSON.stringify({
+      caches: [
+        {
+          id: 'npm_cache',
+          isPresent: true,
+          bytes: 2048 * MiB,
+          fileCount: 9000,
+          lastWriteUtc: now,
+          isRunning: false,
+          isTruncated: false,
+          roots: [
+            {
+              path: 'C:\\Users\\Asha\\AppData\\Local\\npm-cache\\_cacache',
+              status: 'ok',
+              bytes: 2048 * MiB,
+              fileCount: 9000,
+            },
+          ],
+        },
+      ],
+    }),
+  )
+}
+
+const settingsText = (files: Files): string =>
+  [...files.entries()].find(([k]) => k.endsWith('settings.json'))?.[1] ?? ''
+
+test('propose_cleanup with no scan, or naming what is not in it, refuses before asking anyone', async ($, on) => {
+  const files: Files = new Map()
+  const runs: string[][] = []
+  world(on, files, runs)
+  mock.env(on, { APPDATA, USERPROFILE: 'C:\\Users\\Asha', SystemRoot: 'C:\\Windows' })
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  expect(textOf(await $.tool.call({ tool: 'mcp__drive-cleanup__propose_cleanup', classes: ['safe'] }))).toContain(
+    'no deep scan',
+  )
+  seedScan(files)
+  expect(textOf(await $.tool.call({ tool: 'mcp__drive-cleanup__propose_cleanup', findingIds: ['nope'] }))).toContain(
+    'not in the latest scan',
+  )
+  expect(textOf(await $.tool.call({ tool: 'mcp__drive-cleanup__propose_cleanup' }))).toContain('Name findingIds')
+  expect(
+    textOf(await $.tool.call({ tool: 'mcp__drive-cleanup__propose_cleanup', elevatedTasks: ['format_c'] })),
+  ).toContain('Invalid input')
+  expect(textOf(await $.tool.call({ tool: 'mcp__drive-cleanup__propose_cleanup', classes: ['protected'] }))).toContain(
+    'Invalid input',
+  )
+  expect(runs.length).toBe(0)
+})
+
+test('propose_cleanup with no one to answer changes nothing, then stops proposing', async ($, on) => {
+  const files: Files = new Map()
+  const runs: string[][] = []
+  world(on, files, runs)
+  mock.env(on, { APPDATA, USERPROFILE: 'C:\\Users\\Asha', SystemRoot: 'C:\\Windows' })
+  seedScan(files)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const first = textOf(
+    await $.tool.call({
+      tool: 'mcp__drive-cleanup__propose_cleanup',
+      classes: ['safe'],
+      elevatedTasks: ['memory_dumps', 'windows_update_cache'],
+    }),
+  )
+  expect(first).toContain('did not approve')
+  expect(first).toContain('Nothing was changed')
+  expect(runs.length).toBe(0)
+  expect(settingsText(files).includes('"cleanupEnabled":true')).toBe(false)
+  expect([...files.keys()].some(k => k.includes('pending'))).toBe(false)
+  const again = textOf(await $.tool.call({ tool: 'mcp__drive-cleanup__propose_cleanup', classes: ['safe'] }))
+  expect(again).toContain('Do not propose again')
+  expect(runs.length).toBe(0)
+})
+
+test('restore_quarantine refuses an unknown run; duplicate search stays off without an answer', async ($, on) => {
+  const files: Files = new Map()
+  const runs: string[][] = []
+  world(on, files, runs)
+  mock.env(on, { APPDATA, USERPROFILE: 'C:\\Users\\Asha' })
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const restored = textOf(
+    await $.tool.call({
+      tool: 'mcp__drive-cleanup__restore_quarantine',
+      runId: '11111111-2222-3333-4444-555555555555',
+    }),
+  )
+  expect(restored).toContain('cannot be restored')
+  expect(textOf(await $.tool.call({ tool: 'mcp__drive-cleanup__restore_quarantine', runId: 'x' }))).toContain(
+    'Invalid input',
+  )
+  const scanned = textOf(await $.tool.call({ tool: 'mcp__drive-cleanup__run_deep_scan', includeDuplicates: true }))
+  expect(scanned).toContain('did not turn on duplicate search')
+  expect(settingsText(files).includes('"duplicatesEnabled":true')).toBe(false)
+  expect(runs.length).toBe(0)
 })

@@ -9,8 +9,7 @@ export const scoreColor = (score: number | null): ThemeColor | undefined =>
   score === null ? undefined : score >= 70 ? 'success' : score >= 50 ? 'warning' : 'error'
 
 /** The band's name for a score, so a category reads "88 Good", not only green. */
-export const scoreWord = (score: number | null): string =>
-  score === null ? 'not checked' : BAND_LABEL[bandFor(score)]
+export const scoreWord = (score: number | null): string => (score === null ? 'not checked' : BAND_LABEL[bandFor(score)])
 
 export const bar = (score: number | null, width: number): string => {
   if (score === null) return '·'.repeat(width)
@@ -27,8 +26,7 @@ export const STEP_WORD = {
 } as const
 
 /** A step worth retrying: it timed out or failed. Admin rights, settings or privacy will not change on a retry. */
-export const isRetryable = (reason: string | undefined): boolean =>
-  reason === 'timeout' || reason === 'failed'
+export const isRetryable = (reason: string | undefined): boolean => reason === 'timeout' || reason === 'failed'
 
 export const trendText = (trend: readonly (number | null)[]): string =>
   trend.map(n => (n === null ? '—' : String(n))).join(' → ')

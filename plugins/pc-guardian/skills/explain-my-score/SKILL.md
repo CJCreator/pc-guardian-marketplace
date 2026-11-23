@@ -1,7 +1,7 @@
 ---
 description: Explain exactly why this PC got its PC Guardian Health Score, rule by rule.
-disable-model-invocation: true
 allowed-tools: mcp__pc-guardian__get_health_score
+user-invocable: false
 ---
 
 Call `mcp__pc-guardian__get_health_score`. If there is no scan yet, suggest `/pc-guardian:audit`.

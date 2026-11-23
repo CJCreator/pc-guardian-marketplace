@@ -227,28 +227,26 @@ export function classifyCandidate(c: RawCandidate, ctx: ClassifyContext): Findin
   }
 }
 
-/** The user Temp folder as one finding (PC Guardian already cleans it). */
+/** The user Temp folder as one finding: its files not changed for 7 days. */
 function userTempFinding(walk: RawWalk, ctx: ClassifyContext): Finding | undefined {
   if (walk.userTemp.oldCount === 0) return undefined
   return finding(ctx, {
     category: 'user_temp',
     class: 'safe',
-    // Never cleaned here: a folder-wide delete could not keep to the 7-day rule.
-    action: ctx.isPcGuardianInstalled ? 'pc_guardian' : 'manual',
+    action: 'delete',
     path: ctx.temp,
     bytes: walk.userTemp.oldBytes,
     fileCount: walk.userTemp.oldCount,
     isFolder: true,
     modifiedUtc: null,
     accessedUtc: null,
-    reason: ctx.isPcGuardianInstalled
-      ? `Temp files not written for ${String(THRESHOLDS.tempDays)} days or more. Clean them with PC Guardian's cleanup.`
-      : `Temp files not written for ${String(THRESHOLDS.tempDays)} days or more. Clean them with Settings > System > Storage > Temporary files, or Storage Sense. (Old folders in Temp are listed separately and can be cleaned here.)`,
+    reason: `Temp files not written for ${String(THRESHOLDS.tempDays)} days or more. Drive Cleanup deletes only those, file by file; files in use are kept.`,
     evidence: {
       rule: 'temp_file_age',
       values: { oldCount: walk.userTemp.oldCount, totalCount: walk.userTemp.fileCount },
     },
     confidence: 'high',
+    cacheId: 'user_temp',
   })
 }
 
@@ -264,7 +262,8 @@ const WINDOWS_TEXT: Record<
   windows_old: {
     cls: 'review',
     action: 'manual',
-    reason: 'The previous Windows installation. Removing it ends the option to go back; use Settings > System > Storage > Temporary files > Previous Windows installation(s).',
+    reason:
+      'The previous Windows installation. Removing it ends the option to go back; use Settings > System > Storage > Temporary files > Previous Windows installation(s).',
   },
   windows_temp: {
     cls: 'review',
@@ -288,8 +287,9 @@ const WINDOWS_TEXT: Record<
   },
   recycle_bin: {
     cls: 'safe',
-    action: 'manual',
-    reason: 'Your Recycle Bin. Drive Cleanup never empties it; empty it yourself, or with PC Guardian.',
+    action: 'delete',
+    reason:
+      'Your Recycle Bin on the system drive. Emptying it deletes these files for good; only items deleted before you approve are removed.',
   },
   hiberfil: null,
   pagefile: null,
@@ -303,9 +303,10 @@ function windowsFindings(win: RawWindows, ctx: ClassifyContext): Finding[] {
     if (text === null || item.status !== 'ok' || item.bytes <= 0) continue
     out.push(
       finding(ctx, {
-        category: 'windows_managed',
+        category: item.id === 'recycle_bin' ? 'recycle_bin' : 'windows_managed',
         class: text.cls,
-        action: item.id === 'recycle_bin' && ctx.isPcGuardianInstalled ? 'pc_guardian' : text.action,
+        action: text.action,
+        ...(item.id === 'recycle_bin' ? { cacheId: 'recycle_bin' } : {}),
         path: item.path,
         bytes: item.bytes,
         fileCount: item.fileCount,
@@ -330,17 +331,21 @@ function devCacheFindings(raw: RawDevCaches, ctx: ClassifyContext): Finding[] {
     const isSafe = spec.cls === 'safe'
     out.push(
       finding(ctx, {
-        category: isSafe ? 'dev_cache_safe' : 'dev_cache_review',
+        category: spec.category ?? (isSafe ? 'dev_cache_safe' : 'dev_cache_review'),
         class: isSafe ? 'safe' : 'review',
         action: isSafe ? 'delete' : 'manual',
-        path: cache.roots.length > 1 ? parentPath(root) : root,
+        // A browser's roots span profiles; its first cache folder stands for them (the profile is protected).
+        path: cache.roots.length > 1 && spec.category === undefined ? parentPath(root) : root,
         bytes: cache.bytes,
         fileCount: cache.fileCount,
         isFolder: true,
         modifiedUtc: cache.lastWriteUtc,
         accessedUtc: null,
         reason: `${spec.label} (${spec.tool}). ${spec.how} ${spec.note}${cache.isRunning ? ` ${spec.tool} is running now: close it before cleaning.` : ''}`,
-        evidence: { rule: `dev_cache_${spec.id}`, values: { bytes: cache.bytes, isRunning: cache.isRunning ? 'yes' : 'no' } },
+        evidence: {
+          rule: `dev_cache_${spec.id}`,
+          values: { bytes: cache.bytes, isRunning: cache.isRunning ? 'yes' : 'no' },
+        },
         confidence: isSafe ? 'high' : 'medium',
         cacheId: spec.id,
       }),
@@ -404,6 +409,8 @@ const CATEGORY_ORDER: readonly CategoryId[] = [
   'build_cache',
   'dev_cache_safe',
   'dev_cache_review',
+  'browser_cache',
+  'recycle_bin',
   'leftover',
   'duplicate',
   'duplicate_folder',
@@ -438,9 +445,7 @@ export function classifyScan(inputs: ScanInputs, ctx: ClassifyContext): Classifi
   if (win !== null) for (const f of windowsFindings(win, ctx)) push(f)
   findings.sort((a, b) => b.bytes - a.bytes)
 
-  const cappedKinds = new Set(
-    (walk?.candidateTotals ?? []).filter(t => t.isCapped).map(t => t.kind as string),
-  )
+  const cappedKinds = new Set((walk?.candidateTotals ?? []).filter(t => t.isCapped).map(t => t.kind as string))
   const capOf: Partial<Record<CategoryId, string>> = {
     installer: 'installer',
     archive: 'archive',
@@ -495,6 +500,8 @@ export const CATEGORY_LABEL: Record<CategoryId, string> = {
   build_cache: 'Project build caches',
   dev_cache_safe: 'Developer caches',
   dev_cache_review: 'Developer caches (manual)',
+  browser_cache: 'Browser caches',
+  recycle_bin: 'Recycle Bin',
   leftover: 'App leftovers',
   duplicate: 'Duplicate files',
   duplicate_folder: 'Duplicate folders',

@@ -18,7 +18,7 @@ From a shell: `claude plugin install pc-guardian --marketplace CJCreator/pc-guar
 
 **From a folder** (no GitHub): keep the whole marketplace folder (the one holding `.claude-plugin\marketplace.json` and `plugins\`) where everyone can read it (for example `C:\Tools\techgramam` or a network share) and install with `--marketplace C:\Tools\techgramam` in place of the repository.
 
-Answer `y` to add the marketplace and choose the user scope. Then start a new session and run `/pc-guardian:self-check`.
+Answer `y` to add the marketplace and choose the user scope. Then start a new session and ask Claude to run PC Guardian's self-check.
 
 **Update:** run `claude plugin marketplace update techgramam` and `claude plugin update pc-guardian@techgramam`, and restart Claude Code (from a folder, replace its contents with the new version first). `CHANGELOG.md` says what changed. History and settings carry over.
 
@@ -29,28 +29,22 @@ Answer `y` to add the marketplace and choose the user scope. Then start a new se
 
 ## Commands
 
-| Command                                      | What it does                                                                                          |
-| -------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `/pc-guardian:audit`                         | Audits this PC (about 40 seconds) and summarizes the results.                                         |
-| `/pc-guardian:open-dashboard`                | Opens the dashboard beside the chat, and gives a one-time link to the full dashboard in your browser. |
-| `/pc-guardian:report [html\|markdown\|json]` | Saves a report of the latest scan and gives its path. Personal paths are removed by default.          |
-| `/pc-guardian:compare`                       | What changed since the previous scan.                                                                 |
-| `/pc-guardian:explain-my-score`              | Why the score is what it is, rule by rule.                                                            |
-| `/pc-guardian:prioritize-fixes`              | A short plan: critical items, quick wins, then the rest.                                              |
-| `/pc-guardian:explain-recommendation <id>`   | One recommendation in depth.                                                                          |
-| `/pc-guardian:self-check`                    | Confirms PC Guardian can read this machine.                                                           |
-| `/pc-guardian:cleanup`                       | What cleanup could free now, and where to clean. Claude shows the list; only you can clean.           |
+| Command              | What it does                                                   |
+| -------------------- | -------------------------------------------------------------- |
+| `/pc-guardian:audit` | Audits this PC (about 40 seconds) and summarizes the results.  |
 
-You can also just ask ("why is my PC slow?", "what starts with Windows?"): Claude uses PC Guardian's tools to answer from real measurements. The `pc-guardian:pc-auditor` agent can run an audit on its own with only those read-only tools.
+Everything else, just ask: "why is my PC slow?", "what starts with Windows?", "explain my score", "what changed since last time?", "what should I fix first?", "save a report", "open the dashboard", "what could cleanup free?". Claude uses PC Guardian's skills and tools to answer from real measurements, without a command for each. To free disk space, Drive Cleanup's `/drive-cleanup:free-space` cleans Temp files, browser caches and the Recycle Bin itself, in one question. The `pc-guardian:pc-auditor` agent can run an audit on its own with only those read-only tools.
 
-## Cleanup (off until you turn it on)
+## Cleanup (only on your yes)
 
-Turn it on in the browser dashboard under Settings > Cleanup. Then open **Clean up** (or press **Clean up…** in the pane), check what can be cleaned, tick what you want and press Clean after reviewing the list:
+**Easiest:** ask Claude ("clean up my PC", "empty the Recycle Bin"). It measures what can be freed and asks you once, in plain words ("Free up about 2.1 GB?" with **Free 2.1 GB** / **Not now**); nothing changes unless you say yes, and that yes also turns cleanup on.
+
+**By hand:** turn cleanup on in the browser dashboard under Settings > Cleanup. Then open **Clean up** (or press **Clean up…** in the pane), check what can be cleaned, tick what you want and press Clean after reviewing the list:
 
 - **Temp files** not changed for 7 days or more, the **Recycle Bin**, and a closed browser's **cache** are **deleted permanently**; they cannot be restored.
 - **Startup apps** are turned off the way Task Manager does; **Turn back on** undoes it. Apps installed for all users need Claude Code running as administrator.
 
-Claude can tell you what could be freed, but never cleans. Every cleanup is logged and shown on the Clean up page. If you uninstall PC Guardian, turn startup apps back on first if you want them to start again.
+Claude cleans only through that one question, and never in an unattended `claude -p` run. Every cleanup is logged and shown on the Clean up page. If you uninstall PC Guardian, turn startup apps back on first if you want them to start again.
 
 ## The dashboards
 
@@ -67,6 +61,6 @@ Each area starts at 100 and loses points by published rules. Values marked **Est
 
 ## Help
 
-Run `/pc-guardian:self-check` and send its output, the versions (`claude plugin list`, `claude --version`) and what happened to the Techgramam team that gave you PC Guardian. Report security problems to them privately.
+Ask Claude to run PC Guardian's self-check and send its output, the versions (`claude plugin list`, `claude --version`) and what happened to the Techgramam team that gave you PC Guardian. Report security problems to them privately.
 
 Copyright (c) 2026 Techgramam. Proprietary; see LICENSE. Third-party notices: THIRD_PARTY_NOTICES.md (Node.js's own license: runtime\LICENSE).
