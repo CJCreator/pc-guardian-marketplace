@@ -117,7 +117,7 @@ const DATABASE_EXTENSIONS = new Set([
 ])
 const DRIVER_EXTENSIONS = new Set(['.sys', '.inf', '.cat'])
 
-const EDITOR_DATA = ['Code', 'Code - Insiders', 'Cursor', 'Antigravity', 'VSCodium'] as const
+const EDITOR_DATA = ['Code', 'Code - Insiders', 'Cursor', 'Windsurf', 'Antigravity', 'VSCodium'] as const
 
 /** Inside an editor's data folder, only these re-creatable caches are not protected. */
 const EDITOR_CACHE_PARTS = ['Cache', 'CachedData', 'CachedExtensionVSIXs', 'Code Cache', 'GPUCache', 'logs'] as const

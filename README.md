@@ -5,7 +5,7 @@ The `techgramam` marketplace: Claude Code plugins for Windows PCs.
 | Plugin | What it does | Version |
 | --- | --- | --- |
 | [PC Guardian](plugins/pc-guardian/README.md) | Health audit of a Windows PC (performance, startup, storage, browsers, security, stability) with a Health Score, and cleanup you turn on, tick and confirm. | 2.1.0 |
-| [Drive Cleanup](plugins/drive-cleanup/README.md) | Deep audit and cleanup of the system drive: duplicates, installers, archives, developer caches, leftovers. Claude proposes, you answer once; personal files go to a restorable quarantine. **Beta, not yet tested on Windows.** | 1.6.0-beta.1 |
+| [Drive Cleanup](plugins/drive-cleanup/README.md) | Deep audit and cleanup of the system drive: duplicates, installers, archives, developer caches, leftovers. Claude proposes, you answer once; personal files go to a restorable quarantine. **Beta, not yet tested on Windows.** | 1.7.0-beta.1 |
 
 ## Install
 

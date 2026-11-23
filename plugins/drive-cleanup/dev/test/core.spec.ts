@@ -349,3 +349,17 @@ describe('scan scripts (S1, S3)', () => {
     }
   })
 })
+
+describe('advice and totals (1.7)', () => {
+  it('points Windows Update downloads and dumps to the administrator tasks, and restore points to Settings', () => {
+    const recs = windowsRecommendations(volume(), windows())
+    const text = JSON.stringify(recs)
+    assert.doesNotMatch(text, /Tick \\"Windows Update Cleanup\\"/)
+    assert.doesNotMatch(text, /Control Panel > System/)
+    assert.doesNotMatch(text, /class A|class B/)
+  })
+  it('suggests uninstalling apps when Program Files is big', () => {
+    const w = { ...walk(), protectedRoots: [{ path: 'C:\\Program Files', bytes: 60 * 1024 ** 3, fileCount: 1 }] }
+    assert.ok(windowsRecommendations(volume(), windows(), w).some(r => r.id === 'installed_apps'))
+  })
+})

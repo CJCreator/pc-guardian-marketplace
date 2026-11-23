@@ -33,9 +33,16 @@ if ([string]$doc.runId -ne $runId) {
 
 $reparsePoint = [System.IO.FileAttributes]::ReparsePoint
 $directoryFlag = [System.IO.FileAttributes]::Directory
+# Not a link, and this user's (or Windows'): another account that made the root first could
+# have swapped run folders.
+$trusted = @([Security.Principal.WindowsIdentity]::GetCurrent().User.Value, 'S-1-5-18', 'S-1-5-32-544')
 foreach ($p in @($root, $runDir)) {
-    if ((([System.IO.File]::GetAttributes($p)) -band $reparsePoint) -ne 0) {
-        Write-Refusal 'The quarantine folder is a link, so nothing was deleted.'
+    try {
+        if ((([System.IO.File]::GetAttributes($p)) -band $reparsePoint) -ne 0) { throw 'link' }
+        $owner = [System.IO.Directory]::GetAccessControl($p, [System.Security.AccessControl.AccessControlSections]::Owner).GetOwner([Security.Principal.SecurityIdentifier]).Value
+        if ($trusted -notcontains $owner) { throw 'owner' }
+    } catch {
+        Write-Refusal ('The quarantine folder ' + $p + ' is a link or belongs to another account, so nothing was deleted.')
         exit 0
     }
 }

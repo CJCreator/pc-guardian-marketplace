@@ -13,11 +13,12 @@ The person wants to understand their drive before anything changes. This command
 1. **Scan.** Call `get_storage_summary`. If there is no scan, it is older than a day, or the request says "fresh", say "Scanning your C: drive; this takes a few minutes and changes nothing." and call `run_deep_scan` (with `includeDuplicates: true` only when the request mentions duplicates; it asks the person, because it reads file contents). If the scan cannot run at all, call `self_check` and report its lines as they are; a script whose fingerprint does not match means reinstalling Drive Cleanup.
 2. **Gather.** `get_recommendations` always. Then, when the request is about them or they are big: `get_findings` (largest first) for `class: safe` and `class: review`, `get_dev_caches`, `get_duplicate_groups`, `get_largest_files`. Skip what is under about 100 MB.
 3. **Answer** in this order, short:
-   - **The drive:** free of total, and the four or five folders that hold most of it.
+   - **The drive:** free of total, and the four or five folders that hold most of it, as deep as it helps (`topFolders` goes down to AppData\\Local\\<app> and .cache\\<tool>).
    - **Space you can get back** - three buckets with sizes:
      - *Clean* (caches, temporary files, crash dumps, old logs; apps rebuild them) and *your old files* (old installers, archives already extracted, duplicates, old downloads), which go to a quarantine you can undo. Name the biggest few.
      - *Windows itself* (Windows Update files, memory dumps, Windows Temp; administrator permission needed) from `adminTasks`.
      - *Move, don't delete*: the `move_personal_folders`, `move_dev_caches`, `virtual_disks`, `onedrive_files` and `new_content_location` recommendations, with their sizes. These often free the most and lose nothing.
+     - *Yours to decide*: `installed_apps` (uninstall what you don't use), `old_node_modules`, `big_app_data` (apps keeping media or downloads), `outlook_mailbox`, and the caches cleaned by hand from `get_dev_caches` (AI models, iPhone backups, Android images, Spotify and other tools) with the command or setting for each.
    - **Still holding space:** `quarantine_waiting` if present (quarantine frees space only once deleted for good).
    - **Not checked:** any step marked Not checked or partial, unreadable or linked folders. Never fill these in.
    - **Next:** `/drive-cleanup:free-space` cleans what is safe after one question; `/drive-cleanup:free-space 20 GB` stops at a target.

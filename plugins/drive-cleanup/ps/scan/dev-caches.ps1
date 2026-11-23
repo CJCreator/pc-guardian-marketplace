@@ -7,6 +7,9 @@ $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 
 $budgetMs = 20000
+# All roots together stay well inside Drive Cleanup's 420 s wait; later roots are marked truncated.
+$overall = [System.Diagnostics.Stopwatch]::StartNew()
+$overallMs = 300000
 $maxFiles = 400000
 $reparsePoint = [System.IO.FileAttributes]::ReparsePoint
 $directoryFlag = [System.IO.FileAttributes]::Directory
@@ -34,6 +37,13 @@ function Get-FirefoxCacheRoots([string]$local) {
     foreach ($profileDir in @(Get-ChildItem -LiteralPath $profiles -Directory -ErrorAction SilentlyContinue)) { $roots += (Join-Path $profileDir.FullName 'cache2') }
     return $roots
 }
+# Folders found by a pattern under a fixed parent (JetBrains versions, Store app packages).
+function Get-Matching([string]$parent, [string]$pattern, [string]$sub) {
+    $roots = @()
+    if (-not [System.IO.Directory]::Exists($parent)) { return $roots }
+    foreach ($d in @(Get-ChildItem -LiteralPath $parent -Directory -Filter $pattern -ErrorAction SilentlyContinue)) { $roots += (Join-Path $d.FullName $sub) }
+    return $roots
+}
 $caches = @(
     @{ id = 'npm_cache'; roots = @(Join-Path $local 'npm-cache\_cacache'); owners = @('node') },
     @{ id = 'npm_npx'; roots = @(Join-Path $local 'npm-cache\_npx'); owners = @('node') },
@@ -52,6 +62,23 @@ $caches = @(
     @{ id = 'maven_repo'; roots = @(Join-Path $home_ '.m2\repository'); owners = @('java', 'javaw') },
     @{ id = 'nuget_packages'; roots = @(Join-Path $home_ '.nuget\packages'); owners = @('dotnet', 'devenv', 'MSBuild') },
     @{ id = 'docker_data'; roots = @(Join-Path $local 'Docker\wsl'); owners = @('Docker Desktop', 'com.docker.backend') },
+    @{ id = 'cursor_cache'; roots = @($editorParts | ForEach-Object { Join-Path (Join-Path $roaming 'Cursor') $_ }); owners = @('Cursor') },
+    @{ id = 'windsurf_cache'; roots = @($editorParts | ForEach-Object { Join-Path (Join-Path $roaming 'Windsurf') $_ }); owners = @('Windsurf') },
+    @{ id = 'jetbrains_caches'; roots = @(Get-Matching (Join-Path $local 'JetBrains') '*' 'caches'); owners = @('idea64', 'pycharm64', 'webstorm64', 'rider64', 'goland64', 'clion64', 'phpstorm64', 'rustrover64', 'datagrip64') },
+    @{ id = 'cargo_registry'; roots = @(Join-Path $home_ '.cargo\registry'); owners = @('cargo', 'rustc') },
+    @{ id = 'go_build'; roots = @(Join-Path $local 'go-build'); owners = @('go') },
+    @{ id = 'go_modcache'; roots = @(Join-Path $home_ 'go\pkg\mod'); owners = @('go') },
+    @{ id = 'conda_pkgs'; roots = @((Join-Path $home_ 'anaconda3\pkgs'), (Join-Path $home_ 'miniconda3\pkgs'), (Join-Path $home_ 'miniforge3\pkgs')); owners = @('conda', 'python') },
+    @{ id = 'uv_cache'; roots = @(Join-Path $local 'uv\cache'); owners = @('uv') },
+    @{ id = 'huggingface'; roots = @(Join-Path $home_ '.cache\huggingface'); owners = @('python') },
+    @{ id = 'ollama_models'; roots = @(Join-Path $home_ '.ollama\models'); owners = @('ollama', 'ollama app') },
+    @{ id = 'lmstudio_models'; roots = @((Join-Path $home_ '.lmstudio\models'), (Join-Path $home_ '.cache\lm-studio\models')); owners = @('LM Studio') },
+    @{ id = 'android_images'; roots = @(Join-Path $local 'Android\Sdk\system-images'); owners = @('studio64', 'qemu-system-x86_64') },
+    @{ id = 'android_avd'; roots = @(Join-Path $home_ '.android\avd'); owners = @('studio64', 'qemu-system-x86_64') },
+    @{ id = 'playwright_browsers'; roots = @(Join-Path $local 'ms-playwright'); owners = @('node') },
+    @{ id = 'cypress_cache'; roots = @(Join-Path $local 'Cypress\Cache'); owners = @('Cypress') },
+    @{ id = 'iphone_backups'; roots = @((Join-Path $roaming 'Apple Computer\MobileSync\Backup'), (Join-Path $home_ 'Apple\MobileSync\Backup')); owners = @('AppleMobileDeviceProcess', 'iTunes', 'AppleDevices') },
+    @{ id = 'spotify_cache'; roots = @(@(Join-Path $local 'Spotify\Storage') + @(Get-Matching (Join-Path $local 'Packages') 'SpotifyAB.SpotifyMusic_*' 'LocalCache\Spotify\Data')); owners = @('Spotify') },
     @{ id = 'edge_cache'; roots = @(Get-ChromiumCacheRoots (Join-Path $local 'Microsoft\Edge\User Data')); owners = @('msedge') },
     @{ id = 'chrome_cache'; roots = @(Get-ChromiumCacheRoots (Join-Path $local 'Google\Chrome\User Data')); owners = @('chrome') },
     @{ id = 'brave_cache'; roots = @(Get-ChromiumCacheRoots (Join-Path $local 'BraveSoftware\Brave-Browser\User Data')); owners = @('brave') },
@@ -72,6 +99,9 @@ function Measure-Root([string]$root) {
     $rootInfo = [System.IO.DirectoryInfo]::new($root)
     if (($rootInfo.Attributes -band $script:reparsePoint) -ne 0) {
         return @{ path = $root; status = 'denied'; bytes = 0.0; fileCount = 0; latest = 0L; isTruncated = $false }
+    }
+    if ($script:overall.ElapsedMilliseconds -ge $script:overallMs) {
+        return @{ path = $root; status = 'ok'; bytes = 0.0; fileCount = 0; latest = 0L; isTruncated = $true }
     }
     $status = 'ok'
     $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()

@@ -981,3 +981,25 @@ during a cleanup; stale approvals for later cache jobs. See CHANGELOG 1.5.0-beta
 | `'` or `$` in the user or plugin path | Allowed: every path reaches PowerShell in single quotes, and `quote` doubles `'` and the typographic quotes PowerShell also accepts. Double quotes, control characters and wildcards are still refused. |
 | `large_old` outside the user's areas | Only in the user's own areas (profile outside AppData, top-level user folders), like installers and archives. |
 | Partial Restore left the size unchanged | The index subtracts what came back, so the next question says what is left. |
+
+## 22. Second review (1.7)
+
+A second end-to-end review (PowerShell, TypeScript, product and docs; read only, no Windows run) found 20
+gaps; all are fixed (CHANGELOG 1.7.0-beta.1). Design changes worth keeping in mind:
+
+- **`propose_cleanup` selection** is the union of `findingIds` and category/class matches (a category OR a
+  class); the Recycle Bin only when named; deletions before moves; `maxBytes` counts only what frees the
+  system drive.
+- **Moving state.** A cross-drive folder move writes a `moving` entry to `restore.json` before removing any
+  original; `restore.ps1` merges a `moving` item back (copies only what is missing at the original place;
+  drops a quarantine copy identical to what is there; keeps one that differs). `restore.json` is written to
+  `restore.json.new` and swapped in with `File.Replace`.
+- **Quarantine root.** Created with the same protected DACL as run folders; apply, restore and purge refuse a
+  root or run folder owned by anyone but the user, SYSTEM or Administrators.
+- **Name rules inside folders.** `Get-NameReason` (segments, extensions, credential names) runs on every
+  file of a folder before it is deleted or moved; `clean-cache.ps1` has the same keep-list.
+- **Manifest.** Rotated at 3 MB of UTF-8; an existing manifest that cannot be read is never overwritten (that
+  run's rows go to a file of their own).
+- **Run index.** Keeps 200 entries plus every run still in quarantine.
+- **Totals.** `recoverable` = safe (no Recycle Bin), bin, review, Windows-managed manual, developer manual
+  (`summary-2` atom shape).

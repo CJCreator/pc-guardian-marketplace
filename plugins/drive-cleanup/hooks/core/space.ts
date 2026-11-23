@@ -47,9 +47,16 @@ export type SpaceInput = {
   volume: RawVolume | null
   walk: RawWalk | null
   devcaches: RawDevCaches | null
+  /** When the scan ran: node_modules ages are measured from it. */
+  nowMs?: number
 }
 
-export function spaceRecommendations({ volume, walk, devcaches }: SpaceInput): Recommendation[] {
+/** node_modules not installed into for this long are worth a look. */
+export const OLD_NODE_MODULES_DAYS = 180
+/** An app's data folder worth naming. */
+export const BIG_APP_DATA_BYTES = 2 * GB
+
+export function spaceRecommendations({ volume, walk, devcaches, nowMs = Date.now() }: SpaceInput): Recommendation[] {
   const out: Recommendation[] = []
   const other = otherDrive(volume)
   const profile = volume?.userProfile ?? null
@@ -107,9 +114,27 @@ export function spaceRecommendations({ volume, walk, devcaches }: SpaceInput): R
     const moves = [
       { bytes: sizeOf(['npm_cache', 'npm_npx']), step: `npm: npm config set cache ${base}\\npm` },
       { bytes: sizeOf(['pnpm_store', 'pnpm_cache']), step: `pnpm: pnpm config set store-dir ${base}\\pnpm-store` },
-      { bytes: sizeOf(['yarn_cache', 'yarn_berry']), step: `Yarn: yarn config set cache-folder ${base}\\yarn` },
+      {
+        bytes: sizeOf(['yarn_cache']),
+        step: `Yarn 1: yarn config set cache-folder ${base}\\yarn`,
+      },
+      {
+        bytes: sizeOf(['yarn_berry']),
+        step: `Yarn 2 or later: yarn config set globalFolder ${base}\\yarn-berry --home`,
+      },
       { bytes: sizeOf(['pip_cache']), step: `pip: setx PIP_CACHE_DIR ${base}\\pip` },
-      { bytes: sizeOf(['nuget_packages', 'nuget_http']), step: `NuGet: setx NUGET_PACKAGES ${base}\\nuget\\packages` },
+      {
+        bytes: sizeOf(['nuget_packages', 'nuget_http']),
+        step: `NuGet: setx NUGET_PACKAGES ${base}\\nuget\\packages and setx NUGET_HTTP_CACHE_PATH ${base}\\nuget\\http-cache`,
+      },
+      {
+        bytes: sizeOf(['ollama_models']),
+        step: `Ollama: setx OLLAMA_MODELS ${base}\\ollama, quit Ollama, move the models folder there, start Ollama`,
+      },
+      {
+        bytes: sizeOf(['huggingface']),
+        step: `Hugging Face: setx HF_HOME ${base}\\huggingface`,
+      },
       { bytes: sizeOf(['gradle_caches', 'gradle_wrapper']), step: `Gradle: setx GRADLE_USER_HOME ${base}\\gradle` },
       {
         bytes: sizeOf(['maven_repo']),
@@ -162,12 +187,13 @@ export function spaceRecommendations({ volume, walk, devcaches }: SpaceInput): R
           )}. They grow as Linux or Docker uses space, and keep that size after files are deleted inside them.`,
         steps: [
           'Inside first: delete what you no longer need in Linux, and run docker system df then docker builder prune / docker image prune.',
-          'Then let the disk give space back: in an administrator terminal, wsl --shutdown, then wsl --manage <name> --set-sparse true (WSL 2.0 or later). For Docker Desktop: Troubleshoot > Clean / Purge data.',
+          'Then compact the disk so it gives the space back: close Docker Desktop, run wsl --shutdown, then in an administrator terminal run diskpart and type: select vdisk file="<the .vhdx path above>", attach vdisk readonly, compact vdisk, detach vdisk, exit. (Windows Pro: Optimize-VHD -Path "<path>" -Mode Full does the same.)',
+          'Avoid Docker Desktop\'s "Clean / Purge data" unless you mean it: it deletes every image, container and volume.',
           ...moveStep,
           'Never delete a .vhdx file yourself: it holds the whole Linux system or all Docker images.',
         ],
         risk: 'Medium. Back up important files inside the distribution first (wsl --export <name> backup.tar).',
-        undo: 'Sparse: wsl --manage <name> --set-sparse false. Move: move it back the same way.',
+        undo: 'Compacting needs no undo. Move: move it back the same way.',
         estimatedBytes: null,
       })
     }
@@ -192,6 +218,61 @@ export function spaceRecommendations({ volume, walk, devcaches }: SpaceInput): R
         risk: 'Low. Files are still in your OneDrive; without internet you cannot open them.',
         undo: 'Right-click > Always keep on this device.',
         estimatedBytes: oneDrive,
+      })
+    }
+  }
+
+  // 6. node_modules of projects nobody has installed into for months: re-created by npm install.
+  const nodeModules = walk?.nodeModules ?? []
+  const oldModules = nodeModules.filter(n => nowMs - Date.parse(n.modifiedUtc) >= OLD_NODE_MODULES_DAYS * DAY_MS)
+  const oldModulesBytes = oldModules.reduce((s, n) => s + n.bytes, 0)
+  if (oldModulesBytes >= 2 * GB) {
+    out.push({
+      id: 'old_node_modules',
+      title: 'Remove node_modules of old projects',
+      severity: 'suggested',
+      evidence: `${String(oldModules.length)} projects have not installed packages for ${String(OLD_NODE_MODULES_DAYS)} days or more; their node_modules use ${sizeText(oldModulesBytes)}: ${oldModules
+        .slice(0, 3)
+        .map(n => `${n.path} (${sizeText(n.bytes)})`)
+        .join('; ')}.`,
+      steps: [
+        "In a terminal: npx npkill, then pick the node_modules folders of projects you are not working on (space bar), or delete a project's node_modules folder in File Explorer.",
+        'Nothing else in the project is touched. When you work on it again, run npm install (or pnpm/yarn install) there.',
+      ],
+      risk: 'Low. A project whose packages are no longer published (rare) may not install the same versions again: keep its lock file.',
+      undo: 'npm install in the project.',
+      estimatedBytes: oldModulesBytes,
+    })
+  }
+
+  // 7. Apps whose own data is big: only the app can trim it safely.
+  if (walk !== null && profile !== null) {
+    const appRoots = new Set([`${profile}\\AppData\\Local`, `${profile}\\AppData\\Roaming`].map(p => normalizePath(p)))
+    const known = new Set(
+      (devcaches?.caches ?? []).flatMap(c => c.roots.map(r => normalizePath(r.path))).filter(p => p !== ''),
+    )
+    const apps = walk.folders
+      .filter(
+        f => f.bytes >= BIG_APP_DATA_BYTES && appRoots.has(normalizePath(f.path.slice(0, f.path.lastIndexOf('\\')))),
+      )
+      .filter(f => ![...known].some(k => isUnder(k, f.path) || isUnder(f.path, k)))
+      .filter(f => !/\\(packages|temp|microsoft|google|mozilla|bravesoftware)$/i.test(f.path))
+      .toSorted((a, b) => b.bytes - a.bytes)
+      .slice(0, 6)
+    if (apps.length > 0) {
+      out.push({
+        id: 'big_app_data',
+        title: 'Apps keeping a lot of data',
+        severity: 'info',
+        evidence: apps.map(f => `${f.path} (${sizeText(f.bytes)})`).join('; '),
+        steps: [
+          "Open each app and look in its settings for Storage, Cache, Downloads or Offline files (chat, music and video apps keep media there). Clear what you don't need from inside the app.",
+          'An app you uninstalled may have left its folder: check Settings > Apps > Installed apps first, then ask Claude about it.',
+          'Do not delete these folders yourself while the app is installed: it may lose your data or settings.',
+        ],
+        risk: 'Depends on the app; clearing from inside the app is safe.',
+        undo: 'The app downloads again what it needs.',
+        estimatedBytes: null,
       })
     }
   }

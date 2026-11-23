@@ -1,6 +1,6 @@
 # Drive Cleanup
 
-> **Beta (1.6.0-beta.1): not yet run on a Windows PC.** Every milestone in [PLAN.md](PLAN.md) is built
+> **Beta (1.7.0-beta.1): not yet run on a Windows PC.** Every milestone in [PLAN.md](PLAN.md) is built
 > and unit-tested, but the PowerShell scripts have not run on Windows yet. Follow
 > [TESTING.md](TESTING.md) on a test PC or with a backup before using it on files you care about.
 
@@ -35,16 +35,16 @@ Cleanup finds where the space went and what can be recovered safely, and you app
   extensions, and every development project (`.git`, `node_modules`, lock files, source). They are never
   offered.
 - **Nothing changes without your yes.** Claude can scan, choose what to clean and propose it, but the
-  cleanup starts only when you answer **Clean** in Claude Code's own dialog, which shows the real totals
-  and the largest items. Cancel, closing the dialog, or a session with no one to ask (`claude -p`)
-  changes nothing. Prefer to pick each item? Use the pane's Choose items tab instead.
-- **Administrator tasks ask twice.** Windows' own permission prompt (UAC) comes after your Clean; say No
+  cleanup starts only when you answer **Free N GB** in Claude Code's own dialog, which shows the real
+  totals and the largest items. **Not now**, closing the dialog, or a session with no one to ask
+  (`claude -p`) changes nothing; **Let me choose** ticks the items in the pane for you to change. Prefer to pick each item? Use the pane's Choose items tab instead.
+- **Administrator tasks ask twice.** Windows' own permission prompt (UAC) comes after your yes; say No
   there and only the administrator part is skipped. Claude picks from six fixed tasks, never a path or a
   command, and the elevated script is checked against its fingerprint inside the elevated process before
   it runs.
 - **Your files are moved, not deleted.** Installers, archives, downloads, duplicates, leftovers and the
   rest of class B go to `Drive Cleanup Quarantine` on another drive when there is room, and can be
-  restored. Only re-creatable data (class A) is deleted. Quarantine is never deleted until you say so (in the pane, or `/drive-cleanup:quarantine` with its own question); until then it still takes space.
+  restored. Only re-creatable data (caches and temporary files) is deleted. On a PC with one drive the quarantine is on C:, so that space comes back only once you delete it for good. Quarantine is never deleted until you say so (in the pane, or `/drive-cleanup:quarantine` with its own question); until then it still takes space.
 - **Checked again before acting.** Each item must be unchanged since the scan (size, date, and for
   duplicates the SHA-256), not a link and not protected; a move to another drive is verified by
   SHA-256 before the original is removed. Anything else is skipped and reported.
@@ -98,8 +98,9 @@ quarantine runs first.
 
 ## With PC Guardian
 
-Drive Cleanup works on its own. The user Temp folder and the Recycle Bin are left to PC Guardian's
-cleanup (or Windows' own), and Drive Cleanup links to it.
+Drive Cleanup works on its own and cleans your Temp files, browser caches and (only when you name it)
+the Recycle Bin itself. PC Guardian keeps its own cleanup for people without Drive Cleanup, and points to
+`/drive-cleanup:free-space` when both are installed.
 
 ## Development
 

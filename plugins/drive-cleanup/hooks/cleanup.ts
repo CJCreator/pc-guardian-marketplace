@@ -1,7 +1,7 @@
 import type { EngineInterface } from 'claude-code'
 import { isCleanupBusy, setCleanupBusy } from './lock.ts'
 import { ELEVATED_TASKS, elevatedEstimate, elevatedSummary, type ElevatedTaskId } from './core/elevated.ts'
-import { MAX_SCAN_AGE_HOURS, planCleanup, type Plan } from './core/plan.ts'
+import { chooseQuarantineRoot, MAX_SCAN_AGE_HOURS, planCleanup, type Plan } from './core/plan.ts'
 import {
   answers,
   freedEstimate,
@@ -22,7 +22,7 @@ import {
 import type { Finding, ItemResult, RawApply, RunRecord, Settings } from './core/types.ts'
 import { parseOutput, RawApplyCheck, RawCacheCleanCheck, RawPurgeCheck } from './core/validate.ts'
 import { runAction, runElevated } from './safe-shell.ts'
-import { readDataFile, writeDataFile } from './safe-writer.ts'
+import { readDataFile, readDataFileState, writeDataFile } from './safe-writer.ts'
 import {
   invalidateScan,
   isScanRunning,
@@ -44,7 +44,6 @@ import { readSelection, setActivity, setSelection, setView } from './ui-state.ts
 
 const INDEX_FILE = 'runs/index.json'
 const MANIFEST_FILE = 'manifest/deletion_manifest.csv'
-const MANIFEST_LIMIT = 3_500_000
 
 export { isCleanupBusy }
 
@@ -61,29 +60,65 @@ export async function readRunIndex($: EngineInterface): Promise<RunIndexEntry[]>
   return parseIndex(await readDataFile($, INDEX_FILE))
 }
 
+/** UTF-8 bytes: the engine reads at most 4 MiB, so the manifest is rotated well before. */
+const byteLength = (text: string): number => new TextEncoder().encode(text).length
+const MANIFEST_MAX_BYTES = 3_000_000
+/** Run index entries kept besides every run still in quarantine. */
+const INDEX_KEEP = 200
+
+/**
+ * Records a run: its record, the run index and the manifest. Returns the
+ * problems (empty when all was saved), for the person to hear: a run whose
+ * record is lost could not be put back from the pane.
+ */
 async function saveRun(
   $: EngineInterface,
   record: RunRecord,
   change: (index: RunIndexEntry[]) => RunIndexEntry[],
-): Promise<void> {
-  await writeDataFile($, `runs/${record.runId}.json`, JSON.stringify(record))
-  const index = change(await readRunIndex($)).slice(0, 200)
-  await writeDataFile($, INDEX_FILE, JSON.stringify(index))
-  // The manifest grows by appending; past its size limit a new one is started.
-  let manifest = (await readDataFile($, MANIFEST_FILE)) ?? emptyManifest()
-  if (manifest.length > MANIFEST_LIMIT) {
-    await writeDataFile(
-      $,
-      `manifest/deletion_manifest-${record.startedAt.replaceAll(/[-:.]/g, '').slice(0, 15)}.csv`,
-      manifest,
-    )
-    manifest = emptyManifest()
+): Promise<string[]> {
+  const problems: string[] = []
+  const wrote = async (relative: string, text: string): Promise<void> => {
+    const r = await writeDataFile($, relative, text)
+    if (r.status !== 'written') problems.push(`${relative} was not saved (${r.detail})`)
   }
-  await writeDataFile($, MANIFEST_FILE, manifest + manifestRows(record))
+  await wrote(`runs/${record.runId}.json`, JSON.stringify(record))
+  // Every run still in quarantine stays listed, however old: otherwise it could never be put back or emptied.
+  const changed = change(await readRunIndex($))
+  const index = changed.filter((e, i) => i < INDEX_KEEP || (e.kind === 'cleanup' && e.quarantineState === 'active'))
+  await wrote(INDEX_FILE, JSON.stringify(index))
+
+  // The manifest grows by appending. It is never overwritten unless it was read: one that
+  // exists but cannot be read is kept, and this run's rows go to a file of their own.
+  const rows = manifestRows(record)
+  const stamp = record.startedAt.replaceAll(/[-:.]/g, '').slice(0, 15)
+  const current = await readDataFileState($, MANIFEST_FILE)
+  if (current.status === 'unreadable') {
+    await wrote(`manifest/deletion_manifest-${stamp}-${record.runId.slice(0, 8)}.csv`, emptyManifest() + rows)
+  } else {
+    const manifest = current.status === 'ok' ? current.text : emptyManifest()
+    if (current.status === 'ok' && byteLength(manifest + rows) > MANIFEST_MAX_BYTES) {
+      const archived = await writeDataFile($, `manifest/deletion_manifest-${stamp}.csv`, manifest)
+      if (archived.status === 'written') await wrote(MANIFEST_FILE, emptyManifest() + rows)
+      else {
+        problems.push(`the full manifest could not be archived (${archived.detail})`)
+        await wrote(`manifest/deletion_manifest-${stamp}-${record.runId.slice(0, 8)}.csv`, emptyManifest() + rows)
+      }
+    } else {
+      await wrote(MANIFEST_FILE, manifest + rows)
+    }
+  }
+  return problems
 }
 
+/** The person-facing line about records that could not be saved, or ''. */
+const savedNote = (problems: string[]): string =>
+  problems.length === 0 ? '' : ` Warning: the record of this run was not fully saved (${problems.join('; ')}).`
+
 export async function readManifest($: EngineInterface): Promise<string> {
-  return (await readDataFile($, MANIFEST_FILE)) ?? emptyManifest()
+  const current = await readDataFileState($, MANIFEST_FILE)
+  if (current.status === 'ok') return current.text
+  if (current.status === 'missing') return emptyManifest()
+  return `${emptyManifest()}# The full manifest is in ${MANIFEST_FILE} in Drive Cleanup's data folder; it is too large to copy here.\n`
 }
 
 export async function readRunRecord($: EngineInterface, runId: string): Promise<RunRecord | undefined> {
@@ -197,15 +232,19 @@ let declinedAt = Number.NEGATIVE_INFINITY
 
 /**
  * Claude's proposal (propose_cleanup): checked by the same planner, then one
- * question to the person. Clean acts; Show the list puts the items in the
- * pane's Choose items tab for the person to change; Cancel, a dismissed dialog or no one
+ * question to the person. "Free N GB" acts; "Let me choose" puts the items in the
+ * pane's Choose items tab for the person to change; "Not now", a dismissed dialog or no one
  * to ask changes nothing, and refuses new proposals for a while.
  */
 export async function proposeCleanup($: EngineInterface, input: ProposalInput): Promise<CleanOutcome> {
   return await exclusive($, async () => {
     const scan = await loadLatestScan($)
     if (scan === undefined) return { status: 'refused', message: 'There is no deep scan yet. Run run_deep_scan first.' }
-    const picked = selectForProposal(scan.classified.findings, input)
+    const settings = await loadSettings($)
+    // Where quarantine would go: on the system drive, moving files there frees nothing toward a target.
+    const root = chooseQuarantineRoot(scan.volume, settings.quarantineDrive, 0)
+    const quarantineFreesSpace = root.status === 'ok' && root.drive !== scan.ctx.systemDrive.toUpperCase()
+    const picked = selectForProposal(scan.classified.findings, input, { quarantineFreesSpace })
     if (picked.status !== 'ok') return picked
     if (Date.now() - declinedAt < DECLINE_COOLDOWN_MS) {
       return {
@@ -213,7 +252,6 @@ export async function proposeCleanup($: EngineInterface, input: ProposalInput): 
         message: 'The person declined a cleanup a few minutes ago. Do not propose again unless they ask.',
       }
     }
-    const settings = await loadSettings($)
     const runId = crypto.randomUUID()
     // Planned as if cleanup were on, so the person sees the real plan before deciding to turn it on.
     const plan = { deleteBytes: 0, quarantineBytes: 0, quarantineRoot: '', systemDrive: scan.ctx.systemDrive }
@@ -252,7 +290,13 @@ export async function proposeCleanup($: EngineInterface, input: ProposalInput): 
       }
       await setSelection($, () => ({ scanId: scan.meta.scanId, ids: picked.ids }))
       await setView($, { name: 'review', category: null, page: 0 })
-      await $.ui.open({ id: PANE_ID, title: 'Drive Cleanup' })
+      const opened = await $.ui.open({ id: PANE_ID, title: 'Drive Cleanup' }).catch(() => null)
+      if (opened === null || !opened.isPlaced) {
+        return {
+          status: 'review',
+          message: `The ${String(picked.ids.length)} proposed items are selected, but the Drive Cleanup pane could not be shown here. The person can open it later (ask to open Drive Cleanup) and press Clean selected in Choose items; nothing was changed yet.`,
+        }
+      }
       return {
         status: 'review',
         message: `The ${String(picked.ids.length)} proposed items are selected in the Drive Cleanup pane (Choose items tab). The person changes the selection and presses Clean selected there; nothing was changed yet.${picked.elevated.length > 0 ? ' The administrator tasks were not started; propose them again on their own if the person wants them.' : ''}`,
@@ -379,8 +423,14 @@ async function act(
         results.push({
           id: job.findingId,
           status: 'deleted',
-          detail:
-            parsed.data.skippedCount > 0 ? `${String(parsed.data.skippedCount)} files in use or newer were kept.` : '',
+          detail: [
+            parsed.data.skippedCount > 0
+              ? `${String(parsed.data.skippedCount)} files in use, newer or protected were kept.`
+              : '',
+            parsed.data.isTruncated === true ? 'Stopped at the time limit; clean again for the rest.' : '',
+          ]
+            .filter(t => t !== '')
+            .join(' '),
           destination: null,
           sha256: null,
           bytes: parsed.data.removedBytes,
@@ -418,7 +468,7 @@ async function act(
     items: [...joinResults(results, findings), ...adminItems],
     messages,
   }
-  await saveRun($, record, index => [indexEntry(record), ...index])
+  const problems = await saveRun($, record, index => [indexEntry(record), ...index])
   await markDone(
     $,
     results.filter(r => r.status !== 'skipped').map(r => r.id),
@@ -431,7 +481,7 @@ async function act(
     record.quarantinedBytes > 0
       ? ' Changed your mind? /drive-cleanup:quarantine, or the Undo tab in the pane, puts files back.'
       : ''
-  const summary = `Done: ${runSummaryText(record)}${messages.length > 0 ? ` ${messages.join(' ')}` : ''}${undo}`
+  const summary = `Done: ${runSummaryText(record)}${messages.length > 0 ? ` ${messages.join(' ')}` : ''}${undo}${savedNote(problems)}`
   await say($, summary)
   $.ui.toast(summary)
   return { status: 'done', record, message: summary }
@@ -496,7 +546,13 @@ async function readMovedSoFar(
     state?: unknown
   }[]
   const items: ItemResult[] = rows
-    .filter(r => r !== null && typeof r === 'object' && r.state === 'quarantined' && typeof r.id === 'string')
+    .filter(
+      r =>
+        r !== null &&
+        typeof r === 'object' &&
+        (r.state === 'quarantined' || r.state === 'moving') &&
+        typeof r.id === 'string',
+    )
     .map(r => ({
       id: String(r.id),
       status: 'quarantined' as const,
@@ -517,7 +573,7 @@ async function tell($: EngineInterface, message: string): Promise<string> {
 
 /** Puts a quarantine run back, after its own confirmation. Returns what happened. */
 export async function restoreRun($: EngineInterface, runId: string): Promise<string> {
-  if (isCleanupBusy()) return 'Another cleanup, restore or purge is running. Wait for it to finish.'
+  if (isCleanupBusy()) return await tell($, 'Another cleanup, restore or purge is running. Wait for it to finish.')
   setCleanupBusy(true)
   try {
     const index = await readRunIndex($)
@@ -539,7 +595,16 @@ export async function restoreRun($: EngineInterface, runId: string): Promise<str
       DC_LIST_ID: '',
     })
     const parsed = ran.status === 'ok' ? parseOutput(RawApplyCheck, ran.stdout, 'restore.ps1') : ran
-    if (parsed.status !== 'ok') return await tell($, `Restore did not run: ${parsed.detail}`)
+    if (parsed.status !== 'ok') {
+      // restore.ps1 saves after each item: it may have put some back before it stopped.
+      const left = await syncHeld($, runId, entry.quarantineRoot)
+      return await tell(
+        $,
+        left === null
+          ? `Restore did not run: ${parsed.detail}`
+          : `Restore stopped before it finished (${parsed.detail}). ${fmtBytes(left)} is still in quarantine; press Restore again to put back the rest.`,
+      )
+    }
     if (parsed.data.status === 'refused') return await tell($, parsed.data.detail)
     const data = parsed.data as Extract<RawApply, { status: 'ok' }>
     const original = await readRunRecord($, runId)
@@ -572,7 +637,7 @@ export async function restoreRun($: EngineInterface, runId: string): Promise<str
       messages: [],
     }
     const fullyRestored = record.counts.skipped === 0
-    await saveRun($, record, list => [
+    const problems = await saveRun($, record, list => [
       indexEntry(record, runId),
       // What was put back no longer counts as held in quarantine, so the next question says what is left.
       ...list.map(e =>
@@ -587,7 +652,7 @@ export async function restoreRun($: EngineInterface, runId: string): Promise<str
           : e,
       ),
     ])
-    const summary = `Restore: ${runSummaryText(record)}`
+    const summary = `Restore: ${runSummaryText(record)}${savedNote(problems)}`
     await say($, summary)
     $.ui.toast(summary)
     return summary
@@ -598,13 +663,18 @@ export async function restoreRun($: EngineInterface, runId: string): Promise<str
 
 /** Deletes one quarantine run for good, after its own confirmation. Returns what happened. */
 export async function purgeRun($: EngineInterface, runId: string): Promise<string> {
-  if (isCleanupBusy()) return 'Another cleanup, restore or purge is running. Wait for it to finish.'
+  if (isCleanupBusy()) return await tell($, 'Another cleanup, restore or purge is running. Wait for it to finish.')
   setCleanupBusy(true)
   try {
     const index = await readRunIndex($)
     const entry = index.find(e => e.runId === runId && e.kind === 'cleanup')
-    if (entry === undefined || entry.quarantineRoot === null || entry.quarantineState === 'purged') {
-      return await tell($, 'That quarantine run cannot be deleted.')
+    if (entry === undefined || entry.quarantineRoot === null || entry.quarantineState !== 'active') {
+      return await tell(
+        $,
+        entry?.quarantineState === 'restored'
+          ? 'That cleanup was put back already; there is nothing of it left to delete.'
+          : 'That quarantine run cannot be deleted.',
+      )
     }
     const isYes = await confirm(
       $,
@@ -616,7 +686,24 @@ export async function purgeRun($: EngineInterface, runId: string): Promise<strin
     const startedAt = new Date().toISOString()
     const ran = await runAction($, 'purge', { DC_RUN_ID: runId, DC_QUARANTINE_ROOT: entry.quarantineRoot })
     const parsed = ran.status === 'ok' ? parseOutput(RawPurgeCheck, ran.stdout, 'purge.ps1') : ran
-    if (parsed.status !== 'ok') return await tell($, `It did not run: ${parsed.detail}`)
+    if (parsed.status !== 'ok') {
+      // purge.ps1 deletes as it goes: part of the run may be gone already, or all of it.
+      const left = await syncHeld($, runId, entry.quarantineRoot)
+      const runDir = `${entry.quarantineRoot}\\${runId}`
+      if (left === null && !(await $.fs.exists(runDir).catch(() => true))) {
+        const fresh = await readRunIndex($)
+        const gone = fresh.find(e => e.runId === runId)
+        if (gone !== undefined) gone.quarantineState = 'purged'
+        await writeDataFile($, INDEX_FILE, JSON.stringify(fresh))
+        return await tell($, 'The quarantine was deleted, but the script stopped before it reported the size freed.')
+      }
+      return await tell(
+        $,
+        left === null
+          ? `It did not run: ${parsed.detail}`
+          : `Deleting stopped before it finished (${parsed.detail}). Delete for good again to finish.`,
+      )
+    }
     if (parsed.data.status === 'refused') return await tell($, parsed.data.detail)
     const purged = parsed.data
     const record: RunRecord = {
@@ -635,23 +722,57 @@ export async function purgeRun($: EngineInterface, runId: string): Promise<strin
       items: [],
       messages: [],
     }
-    await saveRun($, record, list => [
+    const problems = await saveRun($, record, list => [
       indexEntry(record, runId),
-      // Anything left (in use, denied) keeps the run active, so Delete for good can be tried again.
+      // Anything left (in use, denied) keeps the run active, with what is left, so Delete for good can be tried again.
       ...list.map(e =>
-        e.runId === runId && purged.failedCount === 0 ? { ...e, quarantineState: 'purged' as const } : e,
+        e.runId === runId
+          ? purged.failedCount === 0
+            ? { ...e, quarantineState: 'purged' as const }
+            : { ...e, quarantinedBytes: Math.max(0, e.quarantinedBytes - purged.removedBytes) }
+          : e,
       ),
     ])
     const summary =
       purged.failedCount === 0
         ? `Quarantine deleted: ${runSummaryText(record)}`
         : `Quarantine partly deleted: ${runSummaryText(record)} ${String(purged.failedCount)} items could not be removed (in use or denied); Delete for good again later to finish.`
-    await say($, summary)
-    $.ui.toast(summary)
-    return summary
+    const said = `${summary}${savedNote(problems)}`
+    await say($, said)
+    $.ui.toast(said)
+    return said
   } finally {
     setCleanupBusy(false)
   }
+}
+
+/**
+ * After a restore or purge stopped without a report: what restore.json says is
+ * still in quarantine, written to the run index. Null when restore.json cannot
+ * be read (nothing is changed then).
+ */
+async function syncHeld($: EngineInterface, runId: string, root: string): Promise<number | null> {
+  if (!/^[A-Za-z]:\\Drive Cleanup Quarantine$/.test(root)) return null
+  let rows: { state?: unknown; bytes?: unknown }[]
+  try {
+    const doc = JSON.parse(await $.fs.read(`${root}\\${runId}\\restore.json`)) as { runId?: unknown; items?: unknown }
+    if (doc.runId !== runId) return null
+    rows = (Array.isArray(doc.items) ? doc.items : [doc.items]) as typeof rows
+  } catch {
+    return null
+  }
+  const left = rows
+    .filter(r => r !== null && typeof r === 'object' && (r.state === 'quarantined' || r.state === 'moving'))
+    .reduce((sum, r) => sum + (typeof r.bytes === 'number' ? r.bytes : 0), 0)
+  // A fresh copy of the index, read just now: changed in place.
+  const index = await readRunIndex($)
+  const entry = index.find(e => e.runId === runId)
+  if (entry !== undefined) {
+    entry.quarantinedBytes = left
+    if (left === 0) entry.quarantineState = 'restored'
+  }
+  await writeDataFile($, INDEX_FILE, JSON.stringify(index))
+  return left
 }
 
 function fmtBytes(bytes: number): string {

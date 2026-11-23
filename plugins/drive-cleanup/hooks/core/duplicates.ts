@@ -150,6 +150,7 @@ export function mergeHash(previous: RawHash, next: RawHash): RawHash {
     filesHashed: previous.filesHashed + next.filesHashed,
     bytesHashed: previous.bytesHashed + next.bytesHashed,
     skippedLocked: previous.skippedLocked + next.skippedLocked,
+    skippedTooBig: next.skippedTooBig ?? null,
     skippedCloud: Math.max(previous.skippedCloud, next.skippedCloud),
     groups: [...groups.values()]
       .toSorted((a, b) => b.bytes * (b.files.length - 1) - a.bytes * (a.files.length - 1))

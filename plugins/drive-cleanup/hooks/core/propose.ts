@@ -36,62 +36,72 @@ export const isActionable = (f: Finding): boolean =>
   f.duplicate?.isSuggestedKeeper !== true
 
 /**
- * Resolves a proposal to finding ids. Named ids must exist and be
- * actionable, or the whole proposal is refused (Claude named something it
- * should not). Categories and classes pick actionable findings only, largest
- * first, never a duplicate group's suggested keeper.
+ * Resolves a proposal to finding ids: the named ids plus every finding the
+ * categories or classes match (a finding matches when its category OR its
+ * class is listed). Named ids must exist and be actionable, or the whole
+ * proposal is refused (Claude named something it should not). Filters pick
+ * actionable findings only, never a duplicate group's suggested keeper, and
+ * the Recycle Bin only when it is named (by category or id).
  */
-export function selectForProposal(findings: readonly Finding[], input: ProposalInput): Selection {
+export function selectForProposal(
+  findings: readonly Finding[],
+  input: ProposalInput,
+  opts: { quarantineFreesSpace?: boolean } = {},
+): Selection {
   const hasIds = input.findingIds !== undefined && input.findingIds.length > 0
-  const hasFilter =
-    (input.categories !== undefined && input.categories.length > 0) ||
-    (input.classes !== undefined && input.classes.length > 0)
+  const categories = input.categories ?? []
+  const classes = (input.classes ?? []) as readonly FindingClass[]
+  const hasFilter = categories.length > 0 || classes.length > 0
   const elevatedIn = input.elevatedTasks ?? []
   const checkedTasks = checkTasks(elevatedIn)
   if (checkedTasks.status !== 'ok') return checkedTasks
   const elevated = checkedTasks.tasks
-  if (hasIds && hasFilter) return { status: 'refused', message: 'Name findingIds, or categories/classes, not both.' }
   if (!hasIds && !hasFilter) {
     if (elevated.length > 0) return { status: 'ok', ids: [], skipped: [], elevated }
     return { status: 'refused', message: 'Name findingIds, or categories and/or classes, and/or elevatedTasks.' }
   }
 
   const byId = new Map(findings.map(f => [f.id, f]))
-  let chosen: Finding[]
+  const picked = new Map<string, Finding>()
   const skipped: string[] = []
-  if (hasIds) {
-    chosen = []
-    for (const id of new Set(input.findingIds)) {
-      const f = byId.get(id)
-      if (f === undefined) return { status: 'refused', message: `${id} is not in the latest scan. Use get_findings.` }
-      if (!isActionable(f)) {
-        const why =
-          f.class === 'protected' || f.protectedBy !== null
-            ? 'is protected'
-            : f.duplicate?.isSuggestedKeeper === true
-              ? 'is the copy to keep in its duplicate group'
-              : 'is not cleaned by Drive Cleanup'
-        return { status: 'refused', message: `${f.path} ${why}; leave it out.` }
-      }
-      chosen.push(f)
+  for (const id of new Set(input.findingIds ?? [])) {
+    const f = byId.get(id)
+    if (f === undefined) return { status: 'refused', message: `${id} is not in the latest scan. Use get_findings.` }
+    if (!isActionable(f)) {
+      const why =
+        f.class === 'protected' || f.protectedBy !== null
+          ? 'is protected'
+          : f.duplicate?.isSuggestedKeeper === true
+            ? 'is the copy to keep in its duplicate group'
+            : 'is not cleaned by Drive Cleanup'
+      return { status: 'refused', message: `${f.path} ${why}; leave it out.` }
     }
-  } else {
-    // The Recycle Bin holds the person's own deleted files: only when named by category or id.
-    const namesBin = input.categories?.includes('recycle_bin') === true
-    chosen = findings.filter(
-      f =>
-        isActionable(f) &&
-        (f.category !== 'recycle_bin' || namesBin) &&
-        (input.categories === undefined || input.categories.length === 0 || input.categories.includes(f.category)) &&
-        (input.classes === undefined ||
-          input.classes.length === 0 ||
-          (input.classes as readonly FindingClass[]).includes(f.class)),
-    )
+    picked.set(f.id, f)
   }
-  chosen = chosen.toSorted((a, b) => b.bytes - a.bytes)
+  if (hasFilter) {
+    // The Recycle Bin holds the person's own deleted files: only when named by category or id.
+    const namesBin = categories.includes('recycle_bin')
+    for (const f of findings) {
+      if (!isActionable(f) || picked.has(f.id)) continue
+      if (f.category === 'recycle_bin' && !namesBin) continue
+      if (categories.includes(f.category) || classes.includes(f.class)) picked.set(f.id, f)
+    }
+  }
+  let chosen = [...picked.values()]
+  // Re-creatable data first (it frees space for good), then the largest.
+  chosen = chosen.toSorted((a, b) => Number(a.action !== 'delete') - Number(b.action !== 'delete') || b.bytes - a.bytes)
   if (input.maxBytes !== undefined) {
+    // A target counts only what frees the system drive: a quarantine on it frees nothing until
+    // emptied, so with a target such moves are taken only when named.
+    const named = new Set(input.findingIds ?? [])
+    const freesNothing = (f: Finding): boolean => f.action === 'quarantine' && opts.quarantineFreesSpace === false
     let total = 0
     chosen = chosen.filter(f => {
+      if (freesNothing(f)) {
+        if (named.has(f.id)) return true
+        skipped.push(f.id)
+        return false
+      }
       if (total + f.bytes > (input.maxBytes ?? 0)) {
         skipped.push(f.id)
         return false

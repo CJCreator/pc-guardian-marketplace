@@ -119,6 +119,8 @@ $extAgg = [System.Collections.Generic.Dictionary[string, double[]]]::new([System
 $tempBuckets = [System.Collections.Generic.Dictionary[string, object]]::new([System.StringComparer]::OrdinalIgnoreCase)
 # Build caches inside projects that their tools re-create: Next.js, Vite, Turbo, Parcel.
 $buildBuckets = [System.Collections.Generic.Dictionary[string, object]]::new([System.StringComparer]::OrdinalIgnoreCase)
+# node_modules folders of projects, for advice only (never offered): size and when each was last installed into.
+$nodeBuckets = [System.Collections.Generic.Dictionary[string, object]]::new([System.StringComparer]::OrdinalIgnoreCase)
 
 $largest = [System.Collections.Generic.List[object]]::new()
 $largestFloor = -1.0
@@ -169,7 +171,7 @@ $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 $isTruncated = $false
 $pending = [System.Collections.Generic.Stack[object]]::new()
 $pending.Push(@{
-    Path = $driveRoot.TrimEnd('\') + '\'; Depth = 0; FolderKeys = @(); InProject = $false; SumOnly = $false; ProtKey = $null; BuildBucket = $null
+    Path = $driveRoot.TrimEnd('\') + '\'; Depth = 0; FolderKeys = @(); InProject = $false; SumOnly = $false; ProtKey = $null; BuildBucket = $null; NodeBucket = $null
     InProfile = $false; InAppData = $false; InTemp = $false; TempBucket = $null; InDownloads = $false; InRootUser = $false
 })
 
@@ -236,7 +238,9 @@ while ($pending.Count -gt 0) {
                 $protAgg[$p] = [double[]]@(0, 0)
             }
             $keys = $item.FolderKeys
-            if ($depth -le 3) {
+            # Three levels everywhere; inside the profile two more (AppData\Local\<app>, .cache\<tool>),
+            # so the breakdown can name what is really big.
+            if ($depth -le 3 -or ($item.InProfile -and -not $item.SumOnly -and $depth -le 5)) {
                 $keys = @($item.FolderKeys) + $p
                 $folderAgg[$p] = [double[]]@(0, 0)
                 $folderDepth[$p] = $depth
@@ -251,12 +255,19 @@ while ($pending.Count -gt 0) {
             if ($null -eq $build -and $inProject -and -not $item.SumOnly) {
                 $leaf = $c.Name
                 $parentLeaf = [System.IO.Path]::GetFileName($item.Path.TrimEnd('\'))
-                if (($leaf -eq 'cache' -and $parentLeaf -eq '.next') -or ($leaf -eq '.vite' -and $parentLeaf -eq 'node_modules') -or $leaf -eq '.turbo' -or $leaf -eq '.parcel-cache') {
+                $isCargoTarget = $leaf -eq 'target' -and [System.IO.File]::Exists((Join-Path $item.Path 'Cargo.toml'))
+                if (($leaf -eq 'cache' -and $parentLeaf -eq '.next') -or ($leaf -eq '.vite' -and $parentLeaf -eq 'node_modules') -or $leaf -eq '.turbo' -or $leaf -eq '.parcel-cache' -or $isCargoTarget) {
                     $build = $p
                     $buildBuckets[$p] = @{ Bytes = 0.0; Files = 0; MaxTicks = $c.LastWriteTimeUtc.Ticks; At = $c.LastAccessTimeUtc.Ticks; Ct = $c.CreationTimeUtc.Ticks }
                 }
             }
+            $node = $item.NodeBucket
+            if ($null -eq $node -and $inProject -and -not $item.SumOnly -and $c.Name -eq 'node_modules' -and [System.IO.File]::Exists((Join-Path $item.Path 'package.json'))) {
+                $node = $p
+                $nodeBuckets[$p] = @{ Bytes = 0.0; Files = 0; Written = $c.LastWriteTimeUtc.Ticks }
+            }
             $pending.Push(@{
+                NodeBucket  = $node
                 BuildBucket = $build
                 Path        = $p
                 Depth       = $depth
@@ -324,6 +335,12 @@ while ($pending.Count -gt 0) {
             }
         }
 
+        if ($null -ne $item.NodeBucket) {
+            $nb = $nodeBuckets[$item.NodeBucket]
+            $nb.Bytes += $len
+            $nb.Files += 1
+        }
+
         if ($null -ne $item.BuildBucket) {
             $bb = $buildBuckets[$item.BuildBucket]
             $bb.Bytes += $len
@@ -369,6 +386,15 @@ foreach ($pair in $buildBuckets.GetEnumerator()) {
     Add-Candidate 'build_cache' $pair.Key $b.Bytes $b.Files $true $b.MaxTicks $b.At $b.Ct $null $true
 }
 
+$nodeOut = @($nodeBuckets.GetEnumerator() | Where-Object { $_.Value.Bytes -gt 0 } | Sort-Object -Property { $_.Value.Bytes } -Descending | Select-Object -First 200 | ForEach-Object {
+    [pscustomobject]@{
+        path         = $_.Key
+        bytes        = $_.Value.Bytes
+        fileCount    = [long]$_.Value.Files
+        modifiedUtc  = [DateTime]::new([long]$_.Value.Written, [DateTimeKind]::Utc).ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", $invariant)
+    }
+})
+
 # ------------------------------------------------------------------ output
 $largestOut = @($largest | Sort-Object -Property bytes -Descending | Select-Object -First $keepLargest | ForEach-Object {
     [pscustomobject]@{
@@ -411,6 +437,7 @@ $protOut = @($protAgg.GetEnumerator() | Sort-Object -Property { $_.Value[0] } -D
     entryCount        = $entries
     deniedFolders     = $denied
     deniedSample      = @($deniedSample)
+    nodeModules       = $nodeOut
     longPathFolders   = $longPaths
     longPathSample    = @($longPathSample)
     linkedFolders     = $linked

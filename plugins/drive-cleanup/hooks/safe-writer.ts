@@ -80,3 +80,20 @@ export async function readDataFile($: EngineInterface, relative: string): Promis
     return undefined
   }
 }
+
+export type ReadState = { status: 'ok'; text: string } | { status: 'missing' } | { status: 'unreadable' }
+
+/** Like readDataFile, but tells a missing file from one that exists and cannot be read (too big, locked, a link). */
+export async function readDataFileState($: EngineInterface, relative: string): Promise<ReadState> {
+  const folder = await dataFolder($)
+  if (folder.status !== 'ok') return { status: 'unreadable' }
+  const target = resolve(folder.path, relative)
+  if (typeof target === 'string') return { status: 'unreadable' }
+  try {
+    if (!(await $.fs.exists(target.path))) return { status: 'missing' }
+  } catch {
+    return { status: 'unreadable' }
+  }
+  const text = await readDataFile($, relative)
+  return text === undefined ? { status: 'unreadable' } : { status: 'ok', text }
+}
