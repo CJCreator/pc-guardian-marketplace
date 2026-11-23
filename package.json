@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "lint": "oxlint --deny-warnings",
+    "lint": "bun --bun oxlint --deny-warnings",
     "ci": "bun dev/ci.ts"
   },
   "devDependencies": {
