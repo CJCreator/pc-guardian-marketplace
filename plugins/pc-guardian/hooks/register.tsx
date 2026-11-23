@@ -3,6 +3,7 @@ import { atom, read } from 'claude-code'
 import { CleanupStateSchema, configureZod, runSummary, TOOL_NAMES, TOOL_SPECS, toolInputJsonSchema } from './deps.js'
 import { cancelActiveAudit, startAudit, startRecheck } from './audit.ts'
 import { startCleanupFromPane } from './cleanup.ts'
+import { proposeCleanup, PROPOSE_SPEC, PROPOSE_TOOL } from './propose.ts'
 import {
   bar,
   isRetryable,
@@ -41,6 +42,8 @@ export const register: Register = on => {
         inputSchema: toolInputJsonSchema(name),
       })
     }
+    // The one tool that can change the PC, and only on the person's yes (propose.ts).
+    await $.tool.register({ name: PROPOSE_TOOL, ...PROPOSE_SPEC })
     return next(e)
   })
 
@@ -88,6 +91,7 @@ export const register: Register = on => {
   on('tool.call', { tool: 'mcp__pc-guardian__open_dashboard' }, ($, e, next) =>
     answerTool($, 'open_dashboard', e, next.signal),
   ).catch(internalFailure)
+  on('tool.call', { tool: 'mcp__pc-guardian__propose_cleanup' }, ($, e) => proposeCleanup($, e)).catch(internalFailure)
   on('tool.call', { tool: 'mcp__pc-guardian__get_cleanup_preview' }, ($, e, next) =>
     answerTool($, 'get_cleanup_preview', e, next.signal),
   ).catch(internalFailure)

@@ -6,7 +6,7 @@ user-invocable: false
 
 # Explaining a PC with PC Guardian
 
-PC Guardian is a Windows audit whose tools only read: they measure the machine and score it; your job is to explain and prioritize what they return, never to invent what they did not. Its one exception is cleanup (Temp files, Recycle Bin, browser caches, startup apps), which only the user can run, by ticking items and pressing Clean in the dashboard or the pane; you can show what it could free with `get_cleanup_preview` (`/pc-guardian:cleanup`), never clean.
+PC Guardian is a Windows audit whose tools only read: they measure the machine and score it; your job is to explain and prioritize what they return, never to invent what they did not. Its one exception is cleanup (Temp files, Recycle Bin, browser caches, startup apps), which runs only on the user's yes: show what it could free with `get_cleanup_preview`, then `propose_cleanup` asks them once (see the cleanup skill). Never clean any other way.
 
 ## Rules
 

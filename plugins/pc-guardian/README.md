@@ -35,14 +35,16 @@ Answer `y` to add the marketplace and choose the user scope. Then start a new se
 
 Everything else, just ask: "why is my PC slow?", "what starts with Windows?", "explain my score", "what changed since last time?", "what should I fix first?", "save a report", "open the dashboard", "what could cleanup free?". Claude uses PC Guardian's skills and tools to answer from real measurements, without a command for each. To free disk space, Drive Cleanup's `/drive-cleanup:free-space` also lists what PC Guardian's cleanup can free. The `pc-guardian:pc-auditor` agent can run an audit on its own with only those read-only tools.
 
-## Cleanup (off until you turn it on)
+## Cleanup (only on your yes)
 
-Turn it on in the browser dashboard under Settings > Cleanup. Then open **Clean up** (or press **Clean up…** in the pane), check what can be cleaned, tick what you want and press Clean after reviewing the list:
+**Easiest:** ask Claude ("clean up my PC", "empty the Recycle Bin"). It measures what can be freed and asks you once, in plain words ("Free up about 2.1 GB?" with **Free 2.1 GB** / **Not now**); nothing changes unless you say yes, and that yes also turns cleanup on.
+
+**By hand:** turn cleanup on in the browser dashboard under Settings > Cleanup. Then open **Clean up** (or press **Clean up…** in the pane), check what can be cleaned, tick what you want and press Clean after reviewing the list:
 
 - **Temp files** not changed for 7 days or more, the **Recycle Bin**, and a closed browser's **cache** are **deleted permanently**; they cannot be restored.
 - **Startup apps** are turned off the way Task Manager does; **Turn back on** undoes it. Apps installed for all users need Claude Code running as administrator.
 
-Claude can tell you what could be freed, but never cleans. Every cleanup is logged and shown on the Clean up page. If you uninstall PC Guardian, turn startup apps back on first if you want them to start again.
+Claude cleans only through that one question, and never in an unattended `claude -p` run. Every cleanup is logged and shown on the Clean up page. If you uninstall PC Guardian, turn startup apps back on first if you want them to start again.
 
 ## The dashboards
 

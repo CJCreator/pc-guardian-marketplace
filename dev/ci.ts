@@ -20,6 +20,7 @@ type Check = {
 
 const ROOT = new URL('..', import.meta.url).pathname
 const DC = `${ROOT}plugins/drive-cleanup`
+const PCG = `${ROOT}plugins/pc-guardian`
 
 const countFiles = (pattern: string, cwd: string): number => [...new Glob(pattern).scanSync({ cwd })].length
 
@@ -70,6 +71,13 @@ const CHECKS: Check[] = [
     cwd: DC,
     budgetMs: 30_000,
     verify: all(ranAll('**/*.test.{ts,tsx}', DC), noneSkipped),
+  },
+  {
+    name: 'test:mod:pc-guardian',
+    cmd: ['claude', 'plugin', 'test', '.'],
+    cwd: PCG,
+    budgetMs: 30_000,
+    verify: all(ranAll('**/*.test.{ts,tsx}', PCG), noneSkipped),
   },
   { name: 'script-hashes', cmd: ['bun', 'dev/update-hashes.mjs', '--check'], cwd: DC, budgetMs: 1_000 },
   { name: 'validate:marketplace', cmd: ['claude', 'plugin', 'validate', '.'], budgetMs: 10_000 },

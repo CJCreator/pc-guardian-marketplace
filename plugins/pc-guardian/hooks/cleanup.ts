@@ -38,7 +38,8 @@ import { loadSettings } from './settings-store.ts'
 
 // Cleanup you choose (decisions #33): the only module that runs a cleanup
 // action, and only for items the person ticked in a fresh preview and
-// confirmed, with cleanup turned on. Claude's tool can only preview.
+// confirmed, with cleanup turned on. Claude's propose_cleanup (propose.ts)
+// reaches here only after the person answered yes in Claude Code's dialog.
 
 const cleanupAtom = atom({ plugin: 'pc-guardian', key: 'cleanup' } as const, null, {
   shape: 'cleanup-2',

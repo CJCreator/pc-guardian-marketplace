@@ -4,6 +4,14 @@ All notable changes to PC Guardian AI. The format follows [Keep a Changelog](htt
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-11-23
+
+### Added
+
+- **Claude can clean, on your yes.** New tool `propose_cleanup`: Claude names what to clean (Temp files, Recycle Bin, browser caches, suggested startup apps); PC Guardian measures it again and asks you once in plain words, with **Free N GB** / **Not now**. It cleans only on your yes, through the same checked path as the dashboard and pane; that yes also turns cleanup on. After a **Not now**, Claude does not ask again for 5 minutes. Nothing runs in `claude -p`.
+- `/drive-cleanup:free-space` uses it for the Recycle Bin and browser caches, as a second short question after Drive Cleanup's.
+- First engine tests (`tests/propose.test.tsx`), run in CI.
+
 ## [2.0.2] - 2026-11-23
 
 ### Changed

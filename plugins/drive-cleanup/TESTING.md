@@ -141,6 +141,19 @@ Do this on a VM with a snapshot. Run `/drive-cleanup:free-space` first so there 
 | 8.3 | After a cleanup that quarantined files | The message ends "Changed your mind? /drive-cleanup:undo-cleanup, or the Undo tab in the pane, puts files back." |
 | 8.4 | `/drive-cleanup:free-space` end to end | Claude's plan and result follow the skill's templates: sizes in GB, no class A/B, no paths except the three biggest, free space before and after. |
 
+## 9. With PC Guardian (PC Guardian 2.1.0)
+
+Put a few files in the Recycle Bin and close your browsers first.
+
+| # | Do | Expect |
+| --- | --- | --- |
+| 9.1 | `/drive-cleanup:free-space` | Claude's plan mentions the Recycle Bin and browser caches ("PC Guardian asks separately"). After Drive Cleanup's question, a second short one: "Free up about … ? • Empty the Recycle Bin (…, N items). Those files are gone for good. • Clear … of browser caches (…)". **Free … / Not now**. |
+| 9.2 | Answer **Not now** to PC Guardian's question | Nothing in the Recycle Bin changes; Drive Cleanup's part stands. |
+| 9.3 | Ask "empty my recycle bin" | One question; on **Free …** the Recycle Bin is empty and the run shows on the PC Guardian dashboard's Clean up page. |
+| 9.4 | With a browser open, ask to clear browser caches | That browser is reported as not cleanable now (open), the others are cleaned. |
+| 9.5 | Ask "stop apps starting with Windows" | Only PC Guardian's suggested startup apps are listed; after yes they are off; the dashboard's **Turn back on** restores one. |
+| 9.6 | `claude -p "empty my recycle bin with pc guardian"` | Nothing changes; no question can be answered. |
+
 ## Clean up after testing
 
 Restore or delete for good every quarantine run, then delete `Downloads\dc-test` and

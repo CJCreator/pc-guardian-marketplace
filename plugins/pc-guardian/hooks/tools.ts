@@ -257,8 +257,8 @@ async function openDashboard($: EngineInterface, call: Readonly<Record<string, u
 }
 
 /**
- * What cleanup could free now (decisions #33). Read-only: Claude can prepare
- * the list, never clean; the answer says where the person does that.
+ * What cleanup could free now (decisions #33). Read-only; cleaning goes
+ * through propose_cleanup (propose.ts), which asks the person.
  */
 async function cleanupPreviewTool($: EngineInterface): Promise<Answer> {
   const { settings } = await loadSettings($)
@@ -278,8 +278,8 @@ async function cleanupPreviewTool($: EngineInterface): Promise<Answer> {
     ),
     ...preview.notes,
     isOn
-      ? 'To clean, the person ticks items and presses Clean on the dashboard (Cleanup page) or uses Clean up in the PC Guardian pane. You cannot clean anything.'
-      : 'Cleanup is turned off. Only the person can turn it on, in the dashboard under Settings > Cleanup. You cannot clean anything.',
+      ? 'To clean, call propose_cleanup with the kinds you recommend: it asks the person once and cleans only on their yes. The person can also tick items on the dashboard (Cleanup page) or use Clean up in the pane.'
+      : 'Cleanup is turned off. propose_cleanup asks the person, and their yes also turns it on; or they turn it on in the dashboard under Settings > Cleanup.',
     'Measuring changed nothing on the PC.',
   ]
   return answer(lines.join('\n'), { isCleanupOn: isOn, preview })

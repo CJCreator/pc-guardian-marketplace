@@ -847,8 +847,21 @@ Purge stays in the pane only. The scripts and their hashes do not change.
 | B | `propose_cleanup`, `restore_quarantine`, shared `act`, cooldown; unit and engine tests | A, C | Built |
 | C | Three visible commands; skills rewritten; READMEs | A, B | Built |
 | D | First-run consent folded into the proposal's dialog; duplicate search asked from the scan | after B | Built |
-| E | One plan with PC Guardian: `/free-space` lists what PC Guardian's cleanup can free (Recycle Bin, browser caches) | after B | Listed only; acting on it needs PC Guardian's source (its hooks are built from another repository) |
+| E | One plan with PC Guardian: `/free-space` also cleans the Recycle Bin and browser caches | after B | **Built (PC Guardian 2.1.0)**: PC Guardian's own `propose_cleanup`, one plain question, through its existing `runCleanup`; no change to its bundled `deps.js` or scripts. At most two questions in `/free-space`, see §19.7 |
+| F | Merge the two plugins (§19.7) | after A | Recommended next |
 | — | Optional "approve caches under N GB without asking" | — | **Not built on purpose**: it would break "nothing without a yes"; revisit after A |
+
+### 19.7 Why two questions, and how to get to one
+
+Each plugin asks for its own cleanup. A shared approval is not safe between plugins: if Drive Cleanup's
+yes could unlock PC Guardian's cleanup, so could Claude, by calling PC Guardian with whatever proof Drive
+Cleanup passed. So `/drive-cleanup:free-space` asks at most twice: Drive Cleanup's question (files,
+caches, Windows), then PC Guardian's (Recycle Bin, browser caches), only when that is worth it (about
+500 MB).
+
+**One question needs one plugin.** Recommended after the Windows test (A): fold PC Guardian's cleanup kinds
+(Recycle Bin, browser caches, startup) into Drive Cleanup's planner as findings, keep PC Guardian for the
+health audit, and share the runtime as D1 planned. Then `propose_cleanup` covers everything in one dialog.
 
 ## 20. Administrator cleanup (1.2)
 
