@@ -1,5 +1,12 @@
 import type { EngineInterface } from 'claude-code'
-import { planCleanup } from './core/plan.ts'
+import { planCleanup, type Plan } from './core/plan.ts'
+import {
+  ANSWERS,
+  DECLINE_COOLDOWN_MS,
+  proposalQuestion,
+  selectForProposal,
+  type ProposalInput,
+} from './core/propose.ts'
 import {
   emptyManifest,
   indexEntry,
@@ -9,19 +16,28 @@ import {
   runSummaryText,
   type RunIndexEntry,
 } from './core/runs.ts'
-import type { Finding, ItemResult, RawApply, RunRecord } from './core/types.ts'
+import type { Finding, ItemResult, RawApply, RunRecord, Settings } from './core/types.ts'
 import { parseOutput, RawApplyCheck, RawCacheCleanCheck, RawPurgeCheck } from './core/validate.ts'
 import { runAction } from './safe-shell.ts'
 import { readDataFile, writeDataFile } from './safe-writer.ts'
-import { invalidateScan, isScanRunning, loadLatestScan, markDone, refreshSummary } from './scan.ts'
-import { loadSettings } from './settings-store.ts'
-import { readSelection, setActivity, setSelection } from './ui-state.ts'
+import {
+  invalidateScan,
+  isScanRunning,
+  loadLatestScan,
+  markDone,
+  PANE_ID,
+  refreshSummary,
+  type LoadedScan,
+} from './scan.ts'
+import { loadSettings, saveSettings } from './settings-store.ts'
+import { readSelection, setActivity, setSelection, setView } from './ui-state.ts'
 
-// Cleanup you approve (PLAN.md §7): the only module that runs an action
-// script. It acts only on what the person selected in the pane, after Claude
-// Code's own dialog asked them to confirm, with cleanup turned on in Settings.
-// Claude's tools never reach here. A dismissed dialog, or a `-p` session with
-// no one to ask, changes nothing.
+// Cleanup you approve (PLAN.md §7, §19): the only module that runs an action
+// script. It acts on what the person selected in the pane, or on what Claude
+// proposed (propose_cleanup), and in both cases only after Claude Code's own
+// dialog asked the person and they answered yes. A dismissed dialog, or a
+// `-p` session with no one to ask, changes nothing. Claude can propose and
+// ask; it can never answer.
 
 const INDEX_FILE = 'runs/index.json'
 const MANIFEST_FILE = 'manifest/deletion_manifest.csv'
@@ -83,52 +99,134 @@ async function say($: EngineInterface, message: string, state: 'idle' | 'working
   await setActivity($, { state, message })
 }
 
-/** The pane's "Clean selected…": plan, confirm, act, record. */
-export async function cleanSelected($: EngineInterface): Promise<void> {
-  if (busy) return
+export type CleanOutcome =
+  | { status: 'done'; record: RunRecord; message: string }
+  | { status: 'cancelled' | 'refused' | 'busy' | 'review'; message: string }
+
+type OkPlan = Extract<Plan, { status: 'ok' }>
+
+function planFor(scan: LoadedScan, ids: readonly string[], settings: Settings, runId: string): Plan {
+  return planCleanup({
+    runId,
+    scanId: scan.meta.scanId,
+    scanFinishedAt: scan.meta.finishedAt,
+    findings: scan.classified.findings,
+    selectedIds: ids,
+    settings,
+    volume: scan.volume,
+    nowMs: Date.now(),
+    isScanRunning: isScanRunning(),
+  })
+}
+
+async function exclusive($: EngineInterface, work: () => Promise<CleanOutcome>): Promise<CleanOutcome> {
+  if (busy) return { status: 'busy', message: 'Another cleanup, restore or purge is running. Wait for it to finish.' }
   busy = true
   try {
-    await cleanSelectedInner($)
+    return await work()
   } catch {
-    await say($, 'The cleanup stopped unexpectedly. Check the manifest and the Quarantine view.')
+    const message = 'The cleanup stopped unexpectedly. Check the manifest and the Quarantine view.'
+    await say($, message)
+    return { status: 'refused', message }
   } finally {
     busy = false
   }
 }
 
-async function cleanSelectedInner($: EngineInterface): Promise<void> {
-  const scan = await loadLatestScan($)
-  if (scan === undefined) return say($, 'There is no scan. Run a deep scan first.')
-  const selection = await readSelection($)
-  if (selection.scanId !== scan.meta.scanId) return say($, 'The selection is from an older scan. Select again.')
+/** The pane's "Clean selected…": plan, confirm, act, record. */
+export async function cleanSelected($: EngineInterface): Promise<void> {
+  const outcome = await exclusive($, async () => {
+    const scan = await loadLatestScan($)
+    if (scan === undefined) return { status: 'refused', message: 'There is no scan. Run a deep scan first.' }
+    const selection = await readSelection($)
+    if (selection.scanId !== scan.meta.scanId)
+      return { status: 'refused', message: 'The selection is from an older scan. Select again.' }
+    const settings = await loadSettings($)
+    const runId = crypto.randomUUID()
+    const first = planFor(scan, selection.ids, settings, runId)
+    if (first.status !== 'ok') return { status: 'refused', message: first.message }
+    const isYes = await confirm(
+      $,
+      `Clean ${String(first.itemCount)} selected items? ${first.summary} Items moved to quarantine can be restored; deleted caches and temporary files cannot.`,
+      'Clean',
+    )
+    if (!isYes) return { status: 'cancelled', message: 'Nothing was changed.' }
+    return await act($, scan, selection.ids, runId)
+  })
+  if (outcome.status !== 'done') await say($, outcome.message)
+}
+
+let declinedAt = Number.NEGATIVE_INFINITY
+
+/**
+ * Claude's proposal (propose_cleanup): checked by the same planner, then one
+ * question to the person. Clean acts; Show the list puts the items in the
+ * pane's Review for the person to change; Cancel, a dismissed dialog or no one
+ * to ask changes nothing, and refuses new proposals for a while.
+ */
+export async function proposeCleanup($: EngineInterface, input: ProposalInput): Promise<CleanOutcome> {
+  return await exclusive($, async () => {
+    const scan = await loadLatestScan($)
+    if (scan === undefined) return { status: 'refused', message: 'There is no deep scan yet. Run run_deep_scan first.' }
+    const picked = selectForProposal(scan.classified.findings, input)
+    if (picked.status !== 'ok') return picked
+    if (Date.now() - declinedAt < DECLINE_COOLDOWN_MS) {
+      return {
+        status: 'refused',
+        message: 'The person declined a cleanup a few minutes ago. Do not propose again unless they ask.',
+      }
+    }
+    const settings = await loadSettings($)
+    const runId = crypto.randomUUID()
+    // Planned as if cleanup were on, so the person sees the real plan before deciding to turn it on.
+    const preview = planFor(scan, picked.ids, { ...settings, cleanupEnabled: true }, runId)
+    if (preview.status !== 'ok') return { status: 'refused', message: preview.message }
+    const yes = settings.cleanupEnabled ? ANSWERS.clean : ANSWERS.turnOnAndClean
+    let answer = ''
+    try {
+      answer = await $.ui.ask(
+        proposalQuestion({
+          findings: scan.classified.findings,
+          ids: picked.ids,
+          summary: preview.summary,
+          isCleanupOn: settings.cleanupEnabled,
+        }),
+        { header: 'Drive Cleanup', options: [yes, ANSWERS.review, ANSWERS.cancel] },
+      )
+    } catch {
+      answer = ''
+    }
+    if (answer === ANSWERS.review) {
+      await setSelection($, () => ({ scanId: scan.meta.scanId, ids: picked.ids }))
+      await setView($, { name: 'review', category: null, page: 0 })
+      await $.ui.open({ id: PANE_ID, title: 'Drive Cleanup' })
+      return {
+        status: 'review',
+        message: `The ${String(picked.ids.length)} proposed items are selected in the Drive Cleanup pane (Review). The person changes the selection and presses Clean selected there; nothing was changed yet.`,
+      }
+    }
+    if (answer !== yes) {
+      declinedAt = Date.now()
+      return { status: 'cancelled', message: 'The person did not approve. Nothing was changed.' }
+    }
+    if (!settings.cleanupEnabled) await saveSettings($, s => ({ ...s, cleanupEnabled: true }))
+    const outcome = await act($, scan, picked.ids, runId)
+    if (outcome.status === 'done' && picked.skipped.length > 0) {
+      return {
+        ...outcome,
+        message: `${outcome.message} ${String(picked.skipped.length)} matching items were left for another proposal.`,
+      }
+    }
+    return outcome
+  })
+}
+
+/** Plans again at the moment of acting, so the approval the scripts check is fresh, then acts and records. */
+async function act($: EngineInterface, scan: LoadedScan, ids: readonly string[], runId: string): Promise<CleanOutcome> {
   const settings = await loadSettings($)
-  const plan = (nowMs: number) =>
-    planCleanup({
-      runId,
-      scanId: scan.meta.scanId,
-      scanFinishedAt: scan.meta.finishedAt,
-      findings: scan.classified.findings,
-      selectedIds: selection.ids,
-      settings,
-      volume: scan.volume,
-      nowMs,
-      isScanRunning: isScanRunning(),
-    })
-  const runId = crypto.randomUUID()
-  const first = plan(Date.now())
-  if (first.status !== 'ok') return say($, first.message)
-
-  const isYes = await confirm(
-    $,
-    `Clean ${String(first.itemCount)} selected items? ${first.summary} Items moved to quarantine can be restored; deleted caches and temporary files cannot.`,
-    'Clean',
-  )
-  if (!isYes) return say($, 'Nothing was changed.')
-
-  // Planned again at the moment of acting, so the approval the scripts check is fresh.
-  const approved = plan(Date.now())
-  if (approved.status !== 'ok') return say($, approved.message)
-
+  const fresh = planFor(scan, ids, settings, runId)
+  if (fresh.status !== 'ok') return { status: 'refused', message: fresh.message }
+  const approved: OkPlan = fresh
   const startedAt = new Date().toISOString()
   await say($, `Cleaning ${String(approved.itemCount)} items…`, 'working')
   $.ui.status('Drive Cleanup: cleaning…')
@@ -141,7 +239,7 @@ async function cleanSelectedInner($: EngineInterface): Promise<void> {
   try {
     if (approved.list.items.length > 0) {
       const written = await writeDataFile($, `runs/pending/${runId}.json`, JSON.stringify(approved.list))
-      if (written.status !== 'written') return say($, `Nothing was changed: ${written.detail}`)
+      if (written.status !== 'written') return { status: 'refused', message: `Nothing was changed: ${written.detail}` }
       const ran = await runAction($, 'apply', { DC_RUN_ID: runId })
       const parsed = ran.status === 'ok' ? parseOutput(RawApplyCheck, ran.stdout, 'apply.ps1') : ran
       if (parsed.status !== 'ok') {
@@ -230,24 +328,31 @@ async function cleanSelectedInner($: EngineInterface): Promise<void> {
   const summary = `Cleanup: ${runSummaryText(record)}${messages.length > 0 ? ` ${messages.join(' ')}` : ''} Use Verify to check the result.`
   await say($, summary)
   $.ui.toast(summary)
+  return { status: 'done', record, message: summary }
 }
 
-/** Puts a quarantine run back. */
-export async function restoreRun($: EngineInterface, runId: string): Promise<void> {
-  if (busy) return
+/** Says `message` in the pane and returns it, for Claude's answer. */
+async function tell($: EngineInterface, message: string): Promise<string> {
+  await say($, message)
+  return message
+}
+
+/** Puts a quarantine run back, after its own confirmation. Returns what happened. */
+export async function restoreRun($: EngineInterface, runId: string): Promise<string> {
+  if (busy) return 'Another cleanup, restore or purge is running. Wait for it to finish.'
   busy = true
   try {
     const index = await readRunIndex($)
     const entry = index.find(e => e.runId === runId && e.kind === 'cleanup')
     if (entry === undefined || entry.quarantineRoot === null || entry.quarantineState !== 'active') {
-      return await say($, 'That quarantine run cannot be restored.')
+      return await tell($, 'That quarantine run cannot be restored.')
     }
     const isYes = await confirm(
       $,
       `Put back the ${fmtBytes(entry.quarantinedBytes)} quarantined on ${entry.startedAt.slice(0, 16).replace('T', ' ')}? Anything whose original place is taken again stays in quarantine.`,
       'Restore',
     )
-    if (!isYes) return await say($, 'Nothing was changed.')
+    if (!isYes) return await tell($, 'Nothing was changed.')
     await say($, 'Restoring…', 'working')
     const startedAt = new Date().toISOString()
     const ran = await runAction($, 'restore', {
@@ -256,8 +361,8 @@ export async function restoreRun($: EngineInterface, runId: string): Promise<voi
       DC_LIST_ID: '',
     })
     const parsed = ran.status === 'ok' ? parseOutput(RawApplyCheck, ran.stdout, 'restore.ps1') : ran
-    if (parsed.status !== 'ok') return await say($, `Restore did not run: ${parsed.detail}`)
-    if (parsed.data.status === 'refused') return await say($, parsed.data.detail)
+    if (parsed.status !== 'ok') return await tell($, `Restore did not run: ${parsed.detail}`)
+    if (parsed.data.status === 'refused') return await tell($, parsed.data.detail)
     const data = parsed.data as Extract<RawApply, { status: 'ok' }>
     const original = await readRunRecord($, runId)
     const known = new Map<string, Finding>()
@@ -298,6 +403,7 @@ export async function restoreRun($: EngineInterface, runId: string): Promise<voi
     const summary = `Restore: ${runSummaryText(record)}`
     await say($, summary)
     $.ui.toast(summary)
+    return summary
   } finally {
     busy = false
   }
@@ -358,6 +464,6 @@ function fmtBytes(bytes: number): string {
 }
 
 /** Starts a pane action and returns at once (a press hook's budget). */
-export function start(work: () => Promise<void>): void {
+export function start(work: () => Promise<unknown>): void {
   void work().catch(() => {})
 }

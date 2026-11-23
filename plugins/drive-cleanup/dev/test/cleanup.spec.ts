@@ -11,6 +11,7 @@ import { DEV_CACHES, SAFE_CACHE_IDS } from '../../hooks/core/devcaches.ts'
 import { chooseKeeper, duplicateFindings, mergeHash } from '../../hooks/core/duplicates.ts'
 import { protectedBy } from '../../hooks/core/paths.ts'
 import { chooseQuarantineRoot, planCleanup, type PlanInput } from '../../hooks/core/plan.ts'
+import { isActionable, MAX_PROPOSAL_ITEMS, proposalQuestion, selectForProposal } from '../../hooks/core/propose.ts'
 import { finalReport } from '../../hooks/core/reports.ts'
 import { indexEntry, manifestRows, runSummaryText } from '../../hooks/core/runs.ts'
 import { ACTIONS, checkParams, SCRIPTS } from '../../hooks/core/scripts.ts'
@@ -637,5 +638,76 @@ describe('settings, runs and reports (M4–M5)', () => {
     assert.match(text, /\*\*1 changed\*\*/)
     assert.match(text, /sfc \/verifyonly/)
     assert.match(text, /not on PATH/)
+  })
+})
+
+describe('one-confirm proposals (§19)', () => {
+  const fs = findingsForPlan()
+  const npm = fs.find(f => f.cacheId === 'npm_cache') as Finding
+  const keeper = fs.find(f => f.duplicate?.isSuggestedKeeper === true) as Finding
+  const copies = fs.filter(f => f.duplicate !== undefined && f.duplicate.isSuggestedKeeper !== true)
+
+  it('needs ids or filters, not both and not neither', () => {
+    assert.equal(selectForProposal(fs, {}).status, 'refused')
+    assert.equal(selectForProposal(fs, { findingIds: [npm.id], classes: ['safe'] }).status, 'refused')
+  })
+  it('refuses the whole proposal when a named item is protected, a keeper or unknown', () => {
+    const prot: Finding = { ...npm, id: 'p', class: 'protected', protectedBy: 'Windows folder' }
+    assert.match(
+      (selectForProposal([...fs, prot], { findingIds: [npm.id, 'p'] }) as { message: string }).message,
+      /protected/,
+    )
+    assert.match((selectForProposal(fs, { findingIds: [keeper.id] }) as { message: string }).message, /copy to keep/)
+    assert.match((selectForProposal(fs, { findingIds: ['nope'] }) as { message: string }).message, /not in the latest/)
+  })
+  it('filters take actionable items only, largest first, never a keeper or a protected item', () => {
+    const picked = selectForProposal(fs, { categories: ['duplicate'] })
+    assert.equal(picked.status, 'ok')
+    const ids = (picked as { ids: string[] }).ids
+    assert.ok(!ids.includes(keeper.id))
+    assert.deepEqual(
+      new Set(ids),
+      new Set(fs.filter(f => f.category === 'duplicate' && isActionable(f)).map(f => f.id)),
+    )
+    assert.ok(copies.length > 0)
+    const sizes = ids.map(id => (fs.find(f => f.id === id) as Finding).bytes)
+    assert.deepEqual(
+      sizes,
+      sizes.toSorted((a, b) => b - a),
+    )
+    const safe = selectForProposal(fs, { classes: ['safe'] }) as { ids: string[] }
+    assert.ok(safe.ids.every(id => (fs.find(f => f.id === id) as Finding).class === 'safe'))
+  })
+  it('maxBytes stops at the target and reports what it left', () => {
+    const all = selectForProposal(fs, { categories: ['duplicate'] }) as { ids: string[] }
+    const first = fs.find(f => f.id === all.ids[0]) as Finding
+    const capped = selectForProposal(fs, { categories: ['duplicate'], maxBytes: first.bytes }) as {
+      ids: string[]
+      skipped: string[]
+    }
+    assert.deepEqual(capped.ids, [first.id])
+    assert.equal(capped.skipped.length, all.ids.length - 1)
+  })
+  it('caps a proposal at the item limit', () => {
+    const many = Array.from({ length: MAX_PROPOSAL_ITEMS + 20 }, (_, i) => ({ ...npm, id: `n${String(i)}` }))
+    const picked = selectForProposal(many, { classes: ['safe'] }) as { ids: string[]; skipped: string[] }
+    assert.equal(picked.ids.length, MAX_PROPOSAL_ITEMS)
+    assert.equal(picked.skipped.length, 20)
+  })
+  it('the planner still refuses what selection lets through when cleanup rules say no', () => {
+    const ids = (selectForProposal(fs, { categories: ['duplicate'] }) as { ids: string[] }).ids
+    assert.equal(planCleanup(planInput({ selectedIds: ids })).status, 'ok')
+    assert.equal(planCleanup(planInput({ selectedIds: ids, isScanRunning: true })).status, 'refused')
+  })
+  it('the question shows the real totals and largest items, and says when cleanup is off', () => {
+    const ids = (selectForProposal(fs, { categories: ['duplicate'] }) as { ids: string[] }).ids
+    const plan = planCleanup(planInput({ selectedIds: ids })) as { summary: string }
+    const largest = fs.find(f => f.id === ids[0]) as Finding
+    const on = proposalQuestion({ findings: fs, ids, summary: plan.summary, isCleanupOn: true })
+    assert.ok(on.includes(plan.summary))
+    assert.ok(on.includes(largest.path.slice(-40)))
+    assert.match(on, new RegExp(`cleaning ${String(ids.length)} items`))
+    assert.ok(!on.includes('Cleanup is off'))
+    assert.match(proposalQuestion({ findings: fs, ids, summary: plan.summary, isCleanupOn: false }), /^Cleanup is off/)
   })
 })

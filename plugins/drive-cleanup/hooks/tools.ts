@@ -8,13 +8,17 @@ import { normalizeScriptText, SCRIPTS, sha256Hex } from './core/scripts.ts'
 import type { CategoryId, FindingClass } from './core/types.ts'
 import { SCRIPT_HASHES } from './script-hashes.ts'
 import { dataFolder, writeDataFile } from './safe-writer.ts'
-import { readManifest, readRunIndex } from './cleanup.ts'
+import { proposeCleanup, readManifest, readRunIndex, restoreRun } from './cleanup.ts'
+import { ensureDuplicatesOn } from './consent.ts'
+import { MAX_PROPOSAL_ITEMS, type ProposalInput } from './core/propose.ts'
 import { loadSettings } from './settings-store.ts'
 import { readLatestVerification, verifyCleanup } from './verify.ts'
 import { isScanRunning, loadLatestScan, PANE_ID, setLastAuditFolder, startScan, type LoadedScan } from './scan.ts'
 
-// Claude's tools. Every one only reads the PC (or writes Drive Cleanup's own
-// reports in its data folder); none deletes, moves or changes anything.
+// Claude's tools. All read the PC (or write Drive Cleanup's own reports in
+// its data folder), except propose_cleanup and restore_quarantine: those ask
+// the person in Claude Code's own dialog and act only on their yes, through
+// cleanup.ts, the one module that runs action scripts.
 
 export type ToolName =
   | 'self_check'
@@ -30,13 +34,15 @@ export type ToolName =
   | 'get_quarantine'
   | 'get_settings'
   | 'verify_cleanup'
+  | 'propose_cleanup'
+  | 'restore_quarantine'
   | 'open_pane'
 
 const CLASSES: readonly FindingClass[] = ['safe', 'review', 'protected']
 const CATEGORIES = Object.keys(CATEGORY_LABEL) as CategoryId[]
 
 const READ_ONLY_NOTE =
-  'These tools only read. Cleaning happens only when the person selects items in the Drive Cleanup pane (Review) and confirms; you cannot clean, and must not delete, move or change files any other way on the strength of these results.'
+  'To clean, call propose_cleanup with what you recommend: it asks the person once and acts only on their yes. Never delete, move or change files any other way on the strength of these results.'
 
 export const TOOL_SPECS: Record<ToolName, { description: string; inputSchema: Record<string, unknown> }> = {
   self_check: {
@@ -46,8 +52,12 @@ export const TOOL_SPECS: Record<ToolName, { description: string; inputSchema: Re
   },
   run_deep_scan: {
     description:
-      'Runs the read-only deep scan of the system drive (C:): drives and settings, one metadata walk of the whole drive, and Windows-managed space. Takes a few minutes. Reads names, sizes and dates only; changes nothing. Returns the summary.',
-    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+      'Runs the read-only deep scan of the system drive (C:): drives and settings, one metadata walk of the whole drive, and Windows-managed space. Takes a few minutes. Reads names, sizes and dates only; changes nothing. Returns the summary. includeDuplicates also looks for duplicate files: it reads file contents, so if duplicate search is off the person is asked once to turn it on.',
+    inputSchema: {
+      type: 'object',
+      properties: { includeDuplicates: { type: 'boolean', default: false } },
+      additionalProperties: false,
+    },
   },
   get_scan_status: {
     description: 'Whether a deep scan is running, and the state of each step of the latest scan.',
@@ -97,12 +107,12 @@ export const TOOL_SPECS: Record<ToolName, { description: string; inputSchema: Re
   },
   get_dev_caches: {
     description:
-      'Developer tool caches (npm, Yarn, pip, NuGet, VS Code, Antigravity, pnpm, Gradle, Maven, Docker) and project build caches from the latest scan: size, whether the tool is running, whether Drive Cleanup can clean it or it is manual (with the command for the person to run).',
+      'Developer tool caches (npm, Yarn, pip, NuGet, VS Code, Antigravity, pnpm, Gradle, Maven, Docker) and project build caches from the latest scan: size, whether the tool is running, whether Drive Cleanup can clean it (via propose_cleanup) or it is manual (with the command for the person to run).',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
   get_duplicate_groups: {
     description:
-      'Duplicate files and folders (identical by SHA-256) from the latest scan, each group with every copy, the suggested copy to keep and why. Empty when duplicate search is off (it reads file contents, so only the person can turn it on).',
+      'Duplicate files and folders (identical by SHA-256) from the latest scan, each group with every copy, the suggested copy to keep and why. Empty when duplicate search is off (it reads file contents; run_deep_scan with includeDuplicates asks the person to turn it on).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -114,7 +124,7 @@ export const TOOL_SPECS: Record<ToolName, { description: string; inputSchema: Re
   },
   get_quarantine: {
     description:
-      'Cleanups so far and what is in quarantine: each run with its date, size, location and state (active, restored, deleted for good). Restoring or deleting is done by the person in the pane.',
+      'Cleanups so far and what is in quarantine: each run with its date, size, location and state (active, restored, deleted for good). restore_quarantine puts a run back after the person confirms; deleting for good is done by the person in the pane.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
   get_settings: {
@@ -126,6 +136,29 @@ export const TOOL_SPECS: Record<ToolName, { description: string; inputSchema: Re
     description:
       'After a cleanup: measures free space again and checks, read-only, that developer tools are still installed, projects still have their .git folder, and quarantined files are intact (SHA-256). Writes final_cleanup_report.md and the deletion manifest. Takes up to a few minutes.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+  },
+  propose_cleanup: {
+    description: `Proposes a cleanup of findings from the latest deep scan and asks the person ONCE, in Claude Code's own dialog, showing the real totals and largest items: Clean (or Turn on and clean, when cleanup is off), Show the list (selects the items in the pane's Review for the person to change), or Cancel. Nothing changes unless they answer Clean. Name findingIds from get_findings, or categories and/or classes (safe, review) to take every matching item, largest first; maxBytes caps the total. Protected items, a duplicate group's copy to keep and anything Drive Cleanup does not clean are refused. Class A (safe) items are deleted; class B (review) items are moved to a restorable quarantine. At most ${String(MAX_PROPOSAL_ITEMS)} items. Report the result exactly as returned; if the person declines, do not propose again unless they ask.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        findingIds: { type: 'array', items: { type: 'string' }, maxItems: MAX_PROPOSAL_ITEMS },
+        categories: { type: 'array', items: { type: 'string', enum: CATEGORIES } },
+        classes: { type: 'array', items: { type: 'string', enum: ['safe', 'review'] } },
+        maxBytes: { type: 'number', minimum: 1 },
+      },
+      additionalProperties: false,
+    },
+  },
+  restore_quarantine: {
+    description:
+      "Puts back the files of one cleanup run from quarantine (runId from get_quarantine), after asking the person in Claude Code's own dialog. Nothing moves unless they answer Restore. Anything whose original place is taken again stays in quarantine. Deleting a quarantine for good is not a tool: only the person does that, in the pane.",
+    inputSchema: {
+      type: 'object',
+      properties: { runId: { type: 'string', pattern: '^[0-9a-f-]{36}$' } },
+      required: ['runId'],
+      additionalProperties: false,
+    },
   },
   open_pane: {
     description:
@@ -244,10 +277,17 @@ function summaryText(scan: LoadedScan): string {
   return lines.join('\n')
 }
 
-async function runDeepScan($: EngineInterface): Promise<Answer> {
+async function runDeepScan($: EngineInterface, call: Readonly<Record<string, unknown>>): Promise<Answer> {
+  const wantsDuplicates = call.includeDuplicates
+  if (wantsDuplicates !== undefined && typeof wantsDuplicates !== 'boolean')
+    throw new InputError('includeDuplicates must be true or false.')
+  let note = ''
+  if (wantsDuplicates === true && !(await ensureDuplicatesOn($))) {
+    note = ' The person did not turn on duplicate search, so duplicates were not looked for.'
+  }
   const outcome = await startScan($)
   if (outcome.status !== 'ok') return { result: outcome.message }
-  return answer(summaryText(outcome.scan), {
+  return answer(summaryText(outcome.scan) + note, {
     scanId: outcome.scan.meta.scanId,
     totals: outcome.scan.classified.totals,
     recommendations: outcome.scan.recommendations.map(r => r.title),
@@ -394,7 +434,7 @@ async function devCaches($: EngineInterface): Promise<Answer> {
       size: sizeText(c?.bytes ?? 0),
       bytes: c?.bytes ?? 0,
       toolRunning: c?.isRunning ?? false,
-      class: spec.cls === 'safe' ? 'A. safe (Drive Cleanup can clean it when the person selects it)' : 'B. manual',
+      class: spec.cls === 'safe' ? "A. safe (propose_cleanup can clean it, with the person's yes)" : 'B. manual',
       how: spec.how,
       note: spec.note,
     }
@@ -417,7 +457,7 @@ async function duplicateGroups($: EngineInterface, call: Readonly<Record<string,
     return {
       result: settings.duplicatesEnabled
         ? 'Duplicate search is on but did not complete in the latest scan. Run run_deep_scan again.'
-        : 'Duplicate search is off: it reads file contents, so only the person can turn it on (Drive Cleanup pane > Settings), then run a deep scan.',
+        : 'Duplicate search is off: it reads file contents, so the person must turn it on. Call run_deep_scan with includeDuplicates: true to ask them.',
     }
   }
   const limit = Math.max(1, intInput(call, 'limit', 10, 50))
@@ -456,7 +496,7 @@ async function quarantine($: EngineInterface): Promise<Answer> {
   const active = index.filter(e => e.kind === 'cleanup' && e.quarantineState === 'active')
   const held = active.reduce((s, e) => s + e.quarantinedBytes, 0)
   return answer(
-    `${String(index.length)} runs recorded; ${String(active.length)} quarantine runs hold ${sizeText(held)}. Restore or delete them for good in the Drive Cleanup pane (Quarantine).`,
+    `${String(index.length)} runs recorded; ${String(active.length)} quarantine runs hold ${sizeText(held)}. restore_quarantine puts a run back (the person confirms); deleting one for good is done by the person in the pane (Quarantine).`,
     index
       .slice(0, 50)
       // oxlint-disable-next-line oxc/no-map-spread -- 50 rows at most; mutating would change the stored run index
@@ -467,7 +507,7 @@ async function quarantine($: EngineInterface): Promise<Answer> {
 async function settingsTool($: EngineInterface): Promise<Answer> {
   const s = await loadSettings($)
   return answer(
-    `Cleanup ${s.cleanupEnabled ? 'on' : 'off'}; duplicate search ${s.duplicatesEnabled ? 'on' : 'off'}; quarantine drive ${s.quarantineDrive}. Only the person changes these, in the pane (Settings).`,
+    `Cleanup ${s.cleanupEnabled ? 'on' : 'off'}; duplicate search ${s.duplicatesEnabled ? 'on' : 'off'}; quarantine drive ${s.quarantineDrive}. Only the person changes these: in the pane (Settings), or by answering yes when propose_cleanup or run_deep_scan asks.`,
     s,
   )
 }
@@ -496,6 +536,52 @@ async function verify($: EngineInterface): Promise<Answer> {
   return answer(lines.join('\n'), v)
 }
 
+function stringList(
+  call: Readonly<Record<string, unknown>>,
+  key: string,
+  allowed?: readonly string[],
+): string[] | undefined {
+  const v = call[key]
+  if (v === undefined) return undefined
+  if (!Array.isArray(v) || !v.every(x => typeof x === 'string'))
+    throw new InputError(`${key} must be a list of strings.`)
+  const bad = allowed === undefined ? undefined : v.find(x => !allowed.includes(x))
+  if (bad !== undefined) throw new InputError(`${key}: ${bad} is not one of ${allowed?.join(', ') ?? ''}.`)
+  return v
+}
+
+async function propose($: EngineInterface, call: Readonly<Record<string, unknown>>): Promise<Answer> {
+  const maxBytes = call.maxBytes
+  if (maxBytes !== undefined && (typeof maxBytes !== 'number' || !(maxBytes > 0)))
+    throw new InputError('maxBytes must be a number above 0.')
+  const findingIds = stringList(call, 'findingIds')
+  if (findingIds !== undefined && findingIds.length > MAX_PROPOSAL_ITEMS)
+    throw new InputError(`findingIds holds at most ${String(MAX_PROPOSAL_ITEMS)} items.`)
+  const input: ProposalInput = {
+    findingIds,
+    categories: stringList(call, 'categories', CATEGORIES) as CategoryId[] | undefined,
+    classes: stringList(call, 'classes', ['safe', 'review']) as ('safe' | 'review')[] | undefined,
+    maxBytes,
+  }
+  const outcome = await proposeCleanup($, input)
+  if (outcome.status !== 'done') return { result: outcome.message }
+  const r = outcome.record
+  return answer(`${outcome.message} Call verify_cleanup to check the result.`, {
+    runId: r.runId,
+    deleted: sizeText(r.deletedBytes),
+    quarantined: sizeText(r.quarantinedBytes),
+    quarantineDir: r.quarantineDir,
+    done: r.counts.done,
+    skipped: r.items.filter(i => i.status === 'skipped').map(i => ({ path: i.path, why: i.detail })),
+  })
+}
+
+async function restore($: EngineInterface, call: Readonly<Record<string, unknown>>): Promise<Answer> {
+  const runId = call.runId
+  if (typeof runId !== 'string' || !/^[0-9a-f-]{36}$/.test(runId)) throw new InputError('runId must be a run id.')
+  return { result: await restoreRun($, runId) }
+}
+
 async function openPane($: EngineInterface): Promise<Answer> {
   const opened = await $.ui.open({ id: PANE_ID, title: 'Drive Cleanup' })
   return {
@@ -514,7 +600,7 @@ export async function answerTool(
       case 'self_check':
         return await selfCheck($)
       case 'run_deep_scan':
-        return await runDeepScan($)
+        return await runDeepScan($, call)
       case 'get_scan_status':
         return await scanStatus($)
       case 'get_storage_summary':
@@ -537,6 +623,10 @@ export async function answerTool(
         return await settingsTool($)
       case 'verify_cleanup':
         return await verify($)
+      case 'propose_cleanup':
+        return await propose($, call)
+      case 'restore_quarantine':
+        return await restore($, call)
       case 'open_pane':
         return await openPane($)
     }

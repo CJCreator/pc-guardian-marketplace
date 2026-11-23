@@ -3,6 +3,7 @@ import { atom, read } from 'claude-code'
 import { CATEGORY_LABEL } from './core/classify.ts'
 import { percentText, sizeText } from './core/format.ts'
 import type { Finding } from './core/types.ts'
+import { ensureCleanupOn, ensureDuplicatesOn } from './consent.ts'
 import { cleanSelected, purgeRun, readRunIndex, restoreRun, start } from './cleanup.ts'
 import { isScanRunning, loadLatestScan, PANE_ID, requestCancel, startScan } from './scan.ts'
 import { loadSettings, saveSettings } from './settings-store.ts'
@@ -10,10 +11,11 @@ import { answerTool, internalFailure, TOOL_NAMES, TOOL_SPECS } from './tools.ts'
 import { readActivity, readSelection, readView, setActivity, setSelection, setView } from './ui-state.ts'
 import { verifyCleanup } from './verify.ts'
 
-// Drive Cleanup's hooks module: Claude's read-only tools, and the pane beside
-// the chat. Only the pane's buttons, which only the person presses, change
-// settings, select items and start a cleanup, restore or purge; each of those
-// asks again in Claude Code's own dialog before anything changes.
+// Drive Cleanup's hooks module: Claude's tools, and the pane beside the chat.
+// Claude's tools read, except propose_cleanup and restore_quarantine, which
+// only ask: nothing changes until the person answers yes in Claude Code's own
+// dialog. The pane's buttons, which only the person presses, do the same;
+// purging a quarantine is the pane's alone.
 
 const progressAtom = atom({ plugin: 'drive-cleanup', key: 'progress' } as const, null, {
   shape: 'progress-1',
@@ -47,45 +49,24 @@ async function toggle($: EngineInterface, scanId: string, ids: readonly string[]
 }
 
 async function toggleCleanup($: EngineInterface): Promise<void> {
-  const settings = await loadSettings($)
-  if (settings.cleanupEnabled) {
+  if ((await loadSettings($)).cleanupEnabled) {
     await saveSettings($, s => ({ ...s, cleanupEnabled: false }))
     await setActivity($, { state: 'idle', message: 'Cleanup is off.' })
     return
   }
-  let answer = ''
-  try {
-    answer = await $.ui.ask(
-      'Turn on cleanup? Drive Cleanup will then be able to move the items you select to a restorable quarantine, and delete the re-creatable caches and temporary files you select. Nothing happens until you select items and confirm.',
-      { header: 'Drive Cleanup', options: ['Turn on', 'Cancel'] },
-    )
-  } catch {
-    answer = ''
-  }
-  if (answer !== 'Turn on') return
-  await saveSettings($, s => ({ ...s, cleanupEnabled: true }))
-  await setActivity($, { state: 'idle', message: 'Cleanup is on. Select items in Review.' })
+  if (await ensureCleanupOn($))
+    await setActivity($, { state: 'idle', message: 'Cleanup is on. Select items in Review.' })
 }
 
 async function toggleDuplicates($: EngineInterface): Promise<void> {
-  const settings = await loadSettings($)
-  if (settings.duplicatesEnabled) {
+  if ((await loadSettings($)).duplicatesEnabled) {
     await saveSettings($, s => ({ ...s, duplicatesEnabled: false }))
     await setActivity($, { state: 'idle', message: 'Duplicate search is off.' })
     return
   }
-  let answer = ''
-  try {
-    answer = await $.ui.ask(
-      'Turn on duplicate search? It READS THE CONTENTS of files in your profile to compare them (SHA-256), only on this PC; nothing is sent anywhere. It adds up to 10 minutes to a scan.',
-      { header: 'Drive Cleanup', options: ['Turn on', 'Cancel'] },
-    )
-  } catch {
-    answer = ''
+  if (await ensureDuplicatesOn($)) {
+    await setActivity($, { state: 'idle', message: 'Duplicate search is on. It runs with the next deep scan.' })
   }
-  if (answer !== 'Turn on') return
-  await saveSettings($, s => ({ ...s, duplicatesEnabled: true }))
-  await setActivity($, { state: 'idle', message: 'Duplicate search is on. It runs with the next deep scan.' })
 }
 
 export const register: Register = on => {
@@ -100,7 +81,7 @@ export const register: Register = on => {
     return next(e)
   })
 
-  // One hook per tool, each named literally. All of them only read.
+  // One hook per tool, each named literally. All read, except the two that ask the person first.
   on('tool.call', { tool: 'mcp__drive-cleanup__self_check' }, ($, e) => answerTool($, 'self_check', e)).catch(
     internalFailure,
   )
@@ -140,6 +121,12 @@ export const register: Register = on => {
   on('tool.call', { tool: 'mcp__drive-cleanup__verify_cleanup' }, ($, e) => answerTool($, 'verify_cleanup', e)).catch(
     internalFailure,
   )
+  on('tool.call', { tool: 'mcp__drive-cleanup__propose_cleanup' }, ($, e) => answerTool($, 'propose_cleanup', e)).catch(
+    internalFailure,
+  )
+  on('tool.call', { tool: 'mcp__drive-cleanup__restore_quarantine' }, ($, e) =>
+    answerTool($, 'restore_quarantine', e),
+  ).catch(internalFailure)
   on('tool.call', { tool: 'mcp__drive-cleanup__open_pane' }, ($, e) => answerTool($, 'open_pane', e)).catch(
     internalFailure,
   )

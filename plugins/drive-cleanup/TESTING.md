@@ -100,6 +100,21 @@ Then Pane > Settings > Duplicate search > Turn on… (confirm), and run a new de
 - Non-English Windows: the scan works (no text is parsed from Windows tools).
 - Run Claude Code as administrator once: restore point usage is measured; nothing else changes.
 
+## 6. One-confirm cleanup (1.1)
+
+Recreate the fixture folder (§2) and run a new deep scan first.
+
+| # | Do | Expect |
+| --- | --- | --- |
+| 6.1 | With cleanup **off** in Settings, `/drive-cleanup:free-space` | Claude scans if needed, says what it proposes, then **one** dialog: "Cleanup is off; …", the totals, the largest items, with Turn on and clean / Show the list / Cancel. |
+| 6.2 | Answer **Cancel** | "Nothing was changed"; cleanup still off; fixture files untouched. Ask Claude to propose again at once: it refuses ("declined … a few minutes ago"). |
+| 6.3 | After 5 minutes, `/drive-cleanup:free-space` again, answer **Show the list** | Pane opens on Review with the proposed items ticked; nothing moved. |
+| 6.4 | `/drive-cleanup:free-space 1 GB` and answer **Turn on and clean** | Cleanup turns on; only items up to about 1 GB are cleaned; Claude reports deleted and quarantined sizes, skips with reasons, and runs Verify (free space before and after). |
+| 6.5 | Ask Claude to clean `C:\Windows\notepad.exe` or a file in `.ssh` | Refused before any dialog: protected / not in the scan. |
+| 6.6 | `/drive-cleanup:undo-cleanup` and answer **Restore** | Quarantined fixture files back in place; compare with `Get-FileHash`. |
+| 6.7 | `claude -p "free up space on my C drive with drive cleanup"` | Claude proposes; no one can answer, so nothing changes, and it says so. |
+| 6.8 | Type `/` in a new session | Only `drive-cleanup:free-space`, `drive-cleanup:undo-cleanup` and `pc-guardian:audit` from these plugins. "Explain my score", "find duplicates", "write the reports" still work by asking. |
+
 ## Clean up after testing
 
 Restore or delete for good every quarantine run, then delete `Downloads\dc-test` and

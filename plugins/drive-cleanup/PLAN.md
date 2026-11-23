@@ -91,7 +91,7 @@ Each rule has a test (§14) that names it.
 | S2 | **No links are followed.** Junctions, symbolic links and mount points are counted as entries and never walked. Cloud placeholder files (`RECALL_ON_DATA_ACCESS`, `RECALL_ON_OPEN`, `OFFLINE`) are never opened, so OneDrive never downloads them. | Shared walker function in every script; fixture drive with links and placeholders. |
 | S3 | **Only allowlisted scripts run**, by id, after their SHA-256 matches the hash recorded at build time, as the current user, never elevated. No caller text reaches a command line. | `safe-shell.ts` (shared runtime). |
 | S4 | **Protected paths can never be acted on** (§2.2). The rule lives in core and is repeated as a refusal at the top of every action script. | Core classifier; each action script's guard; tests for every rule. |
-| S5 | **Only the person approves.** Actions run only from the dashboard after the person ticks items and confirms, with cleanup turned on in Settings, from a findings list under 10 minutes old, and with no scan running. Never from a Claude tool, never in a `-p` session. | `cleanup.ts` is the only module allowed to call `runAction` (ESLint rule); `checkActionRequest` gate. |
+| S5 | **Only the person approves.** An action runs only after the person answers yes in Claude Code's own dialog: to Clean selected in the pane, or to a proposal Claude made with `propose_cleanup` (§19). Claude can propose and ask, never answer. Cleanup must be on (the proposal's dialog can turn it on, by the person's answer), the scan under 24 hours old, no scan running. A dismissed dialog, or a `-p` session with no one to ask, changes nothing. Purging a quarantine is the pane's alone. *(Changed in 1.1, §19; it was: never from a Claude tool.)* | `cleanup.ts` is the only module that calls `runAction`; both paths go through `planCleanup` and `act`; engine tests for no answer, cooldown and refusals. |
 | S6 | **Personal files are moved, not deleted.** Every class B item is quarantined and can be restored. Only class A items (re-creatable data) are deleted. | Action selection is a function of class, not a user choice; the review screen shows which action each item gets. |
 | S7 | **Re-check before acting.** Just before each item is touched, the action script confirms it still matches the scan: same path, not a link, same size and modified time, and the same SHA-256 for duplicates and quarantined files. Anything that changed is skipped and reported. | Action scripts. |
 | S8 | **Nothing is lost in a move.** A cross-drive move copies, verifies the copy's SHA-256 against the source, and only then deletes the source. A same-drive move is a rename. | `quarantine-move.ps1`. |
@@ -531,7 +531,7 @@ them.
 
 ## 10. Claude's tools, skills and agent
 
-### 10.1 MCP tools (all read-only)
+### 10.1 MCP tools (read-only, except the two of §19 that ask the person)
 
 | Tool | Input | Returns |
 | --- | --- | --- |
@@ -547,6 +547,8 @@ them.
 | `generate_audit_reports` | `{ scanId? }` | Writes the §12 files; returns their paths |
 | `get_quarantine` | `{}` | Quarantine runs, sizes, ages, restore status |
 | `open_dashboard` | `{ page? }` | One-time dashboard link |
+| `propose_cleanup` | `{ findingIds? \| categories?, classes?, maxBytes? }` | Asks the person once (§19); the run's result, or why nothing changed |
+| `restore_quarantine` | `{ runId }` | Asks the person; what was restored |
 
 Paths in tool output are data. The tool descriptions say so, and the views quote them, so a file named like
 an instruction cannot steer Claude.
@@ -788,3 +790,62 @@ Total: about 50 engineer-days.
 | `sfc /verifyonly` when elevated | Not run; the command is given | It takes long and needs administrator rights; Drive Cleanup never touches Windows files. |
 | Pending approved lists removed after a run | Kept in `runs\pending\` | The engine's file API has no delete. They are small and hold only paths already in the manifest. |
 | `.vscode` and `.idea` as project markers | Not markers; the profile root and top-level folders are never projects | Many profiles hold `.vscode` (and some a dotfiles `.git`) at their root, which would have hidden everything. |
+
+## 19. One-confirm cleanup (1.1)
+
+### 19.1 Problem
+
+Getting space back took about eight steps: turn cleanup on in Settings, turn duplicate search on, scan,
+open the pane, find items, tick each, Clean selected, confirm. Eighteen slash commands across the two
+plugins, three of them duplicated. Claude could explain everything and change nothing.
+
+### 19.2 Goal
+
+The person says "free up space". Claude scans, chooses, and proposes; the person answers **one** dialog;
+the cleanup runs, is verified, and can be undone. Three commands in all.
+
+**Done when:** on a real PC, `/drive-cleanup:free-space` goes from prompt to space freed with exactly one
+confirmation, `/drive-cleanup:undo-cleanup` restores those files byte for byte, and every rule in §2.1
+still has a passing test.
+
+### 19.3 What stays the same
+
+Every rule in §2.1 except the wording of S5. The planner (`planCleanup`) and the action scripts refuse
+exactly what they refused before; the re-check before acting (S7), quarantine for class B (S6), the
+space check (S9), the duplicate keeper (S10) and the manifest (S11) are untouched. Nothing runs in `-p`.
+Purge stays in the pane only. The scripts and their hashes do not change.
+
+### 19.4 Design
+
+| Part | What | Where |
+| --- | --- | --- |
+| Selection | `selectForProposal`: named ids must all exist and be actionable, or the whole proposal is refused; categories/classes take actionable items only, largest first, never a duplicate keeper; `maxBytes` caps the total; at most 500 items | `core/propose.ts` |
+| Question | `proposalQuestion`: built from the scan, never from Claude's words: item count, the planner's summary (what is deleted, what is quarantined and where), the three largest items | `core/propose.ts` |
+| Dialog | `$.ui.ask` with Clean (or **Turn on and clean** when cleanup is off), **Show the list**, Cancel. Planned as if cleanup were on, so the person sees the real plan before deciding | `cleanup.ts` `proposeCleanup` |
+| Act | One path for both the pane and the proposal: plan again at the moment of acting, write the approved list, run `apply` and `cleanCache`, record the run | `cleanup.ts` `act` |
+| Show the list | Puts the proposed ids in the pane's selection, opens Review; nothing runs | `cleanup.ts` |
+| Decline | Cancel, a dismissed dialog or no one to ask: nothing changes, and new proposals are refused for 5 minutes, so a looping or steered model cannot nag | `cleanup.ts` |
+| Undo | `restore_quarantine` calls the pane's restore, with its own confirmation | `tools.ts`, `cleanup.ts` |
+| Duplicates | `run_deep_scan { includeDuplicates: true }` asks the person to turn duplicate search on | `consent.ts` |
+| Commands | Visible: `/drive-cleanup:free-space`, `/drive-cleanup:undo-cleanup`, `/pc-guardian:audit`. The rest `user-invocable: false`, still used by Claude | `skills/*/SKILL.md` |
+
+### 19.5 Threats, and the answer to each
+
+| Threat | Answer |
+| --- | --- |
+| A file named like an instruction steers Claude into proposing it | The planner refuses anything protected or not cleanable whatever Claude names; the dialog shows the real items and totals; the person decides |
+| Claude describes a proposal as smaller or safer than it is | The question is built from the scan and the planner, not from Claude |
+| A model asks again and again until the person clicks yes | 5-minute cooldown after a decline; the skill tells Claude not to re-propose unless asked |
+| Unattended runs (`-p`, SDK, CI) | `$.ui.ask` rejects with no one to ask; that is a decline |
+| Claude deletes another way (shell) | Out of this plugin's reach; the skills forbid it, and Claude Code's own permission prompts still apply |
+
+### 19.6 Work, in order
+
+| Step | What | Runs alongside | Status |
+| --- | --- | --- | --- |
+| A | TESTING.md §0–§3 and the new §6 on a Windows VM | B, C | **Not done: needs a Windows PC** |
+| B | `propose_cleanup`, `restore_quarantine`, shared `act`, cooldown; unit and engine tests | A, C | Built |
+| C | Three visible commands; skills rewritten; READMEs | A, B | Built |
+| D | First-run consent folded into the proposal's dialog; duplicate search asked from the scan | after B | Built |
+| E | One plan with PC Guardian: `/free-space` lists what PC Guardian's cleanup can free (Recycle Bin, browser caches) | after B | Listed only; acting on it needs PC Guardian's source (its hooks are built from another repository) |
+| — | Optional "approve caches under N GB without asking" | — | **Not built on purpose**: it would break "nothing without a yes"; revisit after A |
