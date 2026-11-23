@@ -9,7 +9,8 @@ import type { CategoryId, FindingClass } from './core/types.ts'
 import { SCRIPT_HASHES } from './script-hashes.ts'
 import { ELEVATED_SCRIPT } from './safe-shell.ts'
 import { dataFolder, writeDataFile } from './safe-writer.ts'
-import { proposeCleanup, readManifest, readRunIndex, restoreRun } from './cleanup.ts'
+import { proposeCleanup, purgeRun, readManifest, readRunIndex, restoreRun } from './cleanup.ts'
+import { quarantineRecommendation } from './core/space.ts'
 import { ensureDuplicatesOn } from './consent.ts'
 import { MAX_PROPOSAL_ITEMS, type ProposalInput } from './core/propose.ts'
 import { ELEVATED_TASK_IDS, ELEVATED_TASKS, estimateBytes } from './core/elevated.ts'
@@ -18,7 +19,8 @@ import { readLatestVerification, verifyCleanup } from './verify.ts'
 import { isScanRunning, loadLatestScan, PANE_ID, setLastAuditFolder, startScan, type LoadedScan } from './scan.ts'
 
 // Claude's tools. All read the PC (or write Drive Cleanup's own reports in
-// its data folder), except propose_cleanup and restore_quarantine: those ask
+// its data folder), except propose_cleanup, restore_quarantine and
+// empty_quarantine: those ask
 // the person in Claude Code's own dialog and act only on their yes, through
 // cleanup.ts, the one module that runs action scripts.
 
@@ -29,7 +31,7 @@ export type ToolName =
   | 'get_storage_summary'
   | 'get_largest_files'
   | 'get_findings'
-  | 'get_windows_recommendations'
+  | 'get_recommendations'
   | 'generate_audit_reports'
   | 'get_dev_caches'
   | 'get_duplicate_groups'
@@ -38,6 +40,7 @@ export type ToolName =
   | 'verify_cleanup'
   | 'propose_cleanup'
   | 'restore_quarantine'
+  | 'empty_quarantine'
   | 'open_pane'
 
 const CLASSES: readonly FindingClass[] = ['safe', 'review', 'protected']
@@ -97,9 +100,9 @@ export const TOOL_SPECS: Record<ToolName, { description: string; inputSchema: Re
       additionalProperties: false,
     },
   },
-  get_windows_recommendations: {
+  get_recommendations: {
     description:
-      'Windows storage recommendations from the latest deep scan (Storage Sense, Windows Update files, Windows.old, dumps, hibernation file, restore points, low space, disk health), each with evidence, manual steps, risk and undo. Drive Cleanup runs none of them.',
+      'How to use the space better, from the latest deep scan, each with evidence, manual steps, risk and undo: Windows storage (Storage Sense, Windows Update files, Windows.old, dumps, hibernation file, restore points, low space, disk health), moving big personal folders and developer caches to another drive, where new content is saved, WSL/Docker virtual disks that never shrink, OneDrive files kept on this PC, and quarantine still holding space. Drive Cleanup runs none of these steps; adminTasks are the Windows cleanups it can do through propose_cleanup.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
   generate_audit_reports: {
@@ -126,7 +129,7 @@ export const TOOL_SPECS: Record<ToolName, { description: string; inputSchema: Re
   },
   get_quarantine: {
     description:
-      'Cleanups so far and what is in quarantine: each run with its date, size, location and state (active, restored, deleted for good). restore_quarantine puts a run back after the person confirms; deleting for good is done by the person in the pane.',
+      'Cleanups so far and what is in quarantine: each run with its date, size, location and state (active, restored, deleted for good). restore_quarantine puts a run back and empty_quarantine deletes one for good to free its space; both ask the person first.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
   get_settings: {
@@ -140,7 +143,7 @@ export const TOOL_SPECS: Record<ToolName, { description: string; inputSchema: Re
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
   propose_cleanup: {
-    description: `Proposes a cleanup of findings from the latest deep scan and asks the person ONCE, in Claude Code's own dialog, showing the real totals and largest items: Clean (or Turn on and clean, when cleanup is off), Show the list (selects the items in the pane's Choose items tab for the person to change), or Cancel. Nothing changes unless they answer Clean. Name findingIds from get_findings, or categories and/or classes (safe, review) to take every matching item, largest first; maxBytes caps the total. Protected items, a duplicate group's copy to keep and anything Drive Cleanup does not clean are refused. Class A (safe) items are deleted; class B (review) items are moved to a restorable quarantine. At most ${String(MAX_PROPOSAL_ITEMS)} items. elevatedTasks adds Windows cleanup that needs administrator rights (see get_windows_recommendations for each task's size, effect and undo): after the person answers yes, Windows asks them again (UAC); if they decline there, those tasks are skipped and the rest still runs. Report the result exactly as returned; if the person declines, do not propose again unless they ask.`,
+    description: `Proposes a cleanup of findings from the latest deep scan and asks the person ONCE, in Claude Code's own dialog, showing the real totals and largest items: Clean (or Turn on and clean, when cleanup is off), Show the list (selects the items in the pane's Choose items tab for the person to change), or Cancel. Nothing changes unless they answer Clean. Name findingIds from get_findings, or categories and/or classes (safe, review) to take every matching item, largest first; maxBytes caps the total. Protected items, a duplicate group's copy to keep and anything Drive Cleanup does not clean are refused. Class A (safe) items are deleted; class B (review) items are moved to a restorable quarantine. At most ${String(MAX_PROPOSAL_ITEMS)} items. elevatedTasks adds Windows cleanup that needs administrator rights (see get_recommendations for each task's size, effect and undo): after the person answers yes, Windows asks them again (UAC); if they decline there, those tasks are skipped and the rest still runs. Report the result exactly as returned; if the person declines, do not propose again unless they ask.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -155,7 +158,17 @@ export const TOOL_SPECS: Record<ToolName, { description: string; inputSchema: Re
   },
   restore_quarantine: {
     description:
-      "Puts back the files of one cleanup run from quarantine (runId from get_quarantine), after asking the person in Claude Code's own dialog. Nothing moves unless they answer Restore. Anything whose original place is taken again stays in quarantine. Deleting a quarantine for good is not a tool: only the person does that, in the pane.",
+      "Puts back the files of one cleanup run from quarantine (runId from get_quarantine), after asking the person in Claude Code's own dialog. Nothing moves unless they answer Restore. Anything whose original place is taken again stays in quarantine.",
+    inputSchema: {
+      type: 'object',
+      properties: { runId: { type: 'string', pattern: '^[0-9a-f-]{36}$' } },
+      required: ['runId'],
+      additionalProperties: false,
+    },
+  },
+  empty_quarantine: {
+    description:
+      "Deletes one cleanup run's quarantine for good (runId from get_quarantine), to free the space it still holds, after asking the person in Claude Code's own dialog. Nothing is deleted unless they answer Delete for good; after that the files cannot be put back. Only for runs the person said they no longer need: never on your own initiative, and never in the same breath as the cleanup that made it.",
     inputSchema: {
       type: 'object',
       properties: { runId: { type: 'string', pattern: '^[0-9a-f-]{36}$' } },
@@ -376,7 +389,8 @@ async function findings($: EngineInterface, call: Readonly<Record<string, unknow
 async function recommendations($: EngineInterface): Promise<Answer> {
   const scan = await loadLatestScan($)
   if (scan === undefined) return NO_SCAN
-  const recs = scan.recommendations
+  const waiting = quarantineRecommendation(await readRunIndex($), scan.volume?.systemDrive ?? 'C:', Date.now())
+  const recs = waiting === undefined ? scan.recommendations : [waiting, ...scan.recommendations]
   const adminTasks = ELEVATED_TASK_IDS.map(id => {
     const bytes = estimateBytes(id, scan.windows)
     const spec = ELEVATED_TASKS[id]
@@ -391,7 +405,7 @@ async function recommendations($: EngineInterface): Promise<Answer> {
     }
   })
   return answer(
-    `${recs.length === 0 ? 'No Windows storage recommendations from the latest scan.' : `${String(recs.length)} Windows recommendations.`} Drive Cleanup can do the administrator tasks listed under adminTasks through propose_cleanup (elevatedTasks): the person answers Clean, then Windows asks for administrator permission. Windows.old, restore points and turning hibernation fully off stay manual steps for the person.`,
+    `${recs.length === 0 ? 'No recommendations from the latest scan.' : `${String(recs.length)} recommendations.`} Drive Cleanup can do the administrator tasks listed under adminTasks through propose_cleanup (elevatedTasks): the person answers Clean, then Windows asks for administrator permission. Windows.old, restore points and turning hibernation fully off stay manual steps for the person.`,
     { recommendations: recs, adminTasks },
   )
 }
@@ -510,7 +524,7 @@ async function quarantine($: EngineInterface): Promise<Answer> {
   const active = index.filter(e => e.kind === 'cleanup' && e.quarantineState === 'active')
   const held = active.reduce((s, e) => s + e.quarantinedBytes, 0)
   return answer(
-    `${String(index.length)} runs recorded; ${String(active.length)} quarantine runs hold ${sizeText(held)}. restore_quarantine puts a run back (the person confirms); deleting one for good is done by the person in the pane (Undo tab).`,
+    `${String(index.length)} runs recorded; ${String(active.length)} quarantine runs hold ${sizeText(held)}. restore_quarantine puts a run back; empty_quarantine deletes one for good to free its space. Both ask the person first.`,
     index
       .slice(0, 50)
       // oxlint-disable-next-line oxc/no-map-spread -- 50 rows at most; mutating would change the stored run index
@@ -597,6 +611,12 @@ async function restore($: EngineInterface, call: Readonly<Record<string, unknown
   return { result: await restoreRun($, runId) }
 }
 
+async function emptyQuarantine($: EngineInterface, call: Readonly<Record<string, unknown>>): Promise<Answer> {
+  const runId = call.runId
+  if (typeof runId !== 'string' || !/^[0-9a-f-]{36}$/.test(runId)) throw new InputError('runId must be a run id.')
+  return { result: await purgeRun($, runId) }
+}
+
 async function openPane($: EngineInterface): Promise<Answer> {
   const opened = await $.ui.open({ id: PANE_ID, title: 'Drive Cleanup' })
   return {
@@ -624,7 +644,7 @@ export async function answerTool(
         return await largestFiles($, call)
       case 'get_findings':
         return await findings($, call)
-      case 'get_windows_recommendations':
+      case 'get_recommendations':
         return await recommendations($)
       case 'generate_audit_reports':
         return await reports($)
@@ -642,6 +662,8 @@ export async function answerTool(
         return await propose($, call)
       case 'restore_quarantine':
         return await restore($, call)
+      case 'empty_quarantine':
+        return await emptyQuarantine($, call)
       case 'open_pane':
         return await openPane($)
     }

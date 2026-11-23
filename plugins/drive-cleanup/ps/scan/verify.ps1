@@ -93,7 +93,13 @@ $quarantine = foreach ($q in @($list.quarantine)) {
             if (-not [System.IO.File]::Exists($dest)) { $missing++; continue }
             if (-not $item.sha256) { $matched++; continue }
             $share = [System.IO.FileShare]::ReadWrite -bor [System.IO.FileShare]::Delete
-            $stream = [System.IO.FileStream]::new($dest, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, $share, 1048576, [System.IO.FileOptions]::SequentialScan)
+            # A file that cannot be opened (locked, gone meanwhile) counts as missing, not as the end of the check.
+            try {
+                $stream = [System.IO.FileStream]::new($dest, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, $share, 1048576, [System.IO.FileOptions]::SequentialScan)
+            } catch {
+                $missing++
+                continue
+            }
             try {
                 $hex = ([System.BitConverter]::ToString($sha.ComputeHash($stream)) -replace '-', '').ToLowerInvariant()
             } finally {

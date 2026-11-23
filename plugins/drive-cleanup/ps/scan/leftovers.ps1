@@ -94,6 +94,8 @@ function Measure-Folder([string]$root) {
 
 $parents = @([string]$env:APPDATA, [string]$env:LOCALAPPDATA, (Join-Path ([string]$env:LOCALAPPDATA) 'Programs'))
 $folders = [System.Collections.Generic.List[object]]::new()
+# Stops well before Drive Cleanup's 300 s limit, whatever the number of folders.
+$overall = [System.Diagnostics.Stopwatch]::StartNew()
 foreach ($parent in $parents) {
     if (-not [System.IO.Directory]::Exists($parent)) { continue }
     try {
@@ -102,6 +104,7 @@ foreach ($parent in $parents) {
         continue
     }
     foreach ($dir in $children) {
+        if ($folders.Count -ge 300 -or $overall.ElapsedMilliseconds -ge 240000) { break }
         if (($dir.Attributes -band $reparsePoint) -ne 0) { continue }
         if ($skip.Contains($dir.Name) -or $dir.Name.StartsWith('.')) { continue }
         $token = Get-Token $dir.Name
@@ -116,7 +119,6 @@ foreach ($parent in $parents) {
             lastWriteUtc = $dir.LastWriteTimeUtc.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", $invariant)
             isTruncated  = $measured.isTruncated
         })
-        if ($folders.Count -ge 300) { break }
     }
 }
 

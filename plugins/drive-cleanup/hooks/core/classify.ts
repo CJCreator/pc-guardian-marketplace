@@ -379,6 +379,33 @@ function leftoverFindings(raw: RawLeftovers, ctx: ClassifyContext): Finding[] {
   })
 }
 
+/**
+ * Removes, in place, actionable findings that sit inside another one (an old
+ * log inside Temp, a log inside the npm cache, a large file inside a leftover
+ * folder): cleaning the outer one cleans them, and counting both would promise
+ * the same bytes twice. Kept findings (protected, a duplicate's copy to keep)
+ * are never removed: the planner needs them.
+ */
+function dropNested(findings: Finding[], devcaches: RawDevCaches | null): void {
+  const containers = new Set<string>()
+  for (const f of findings) {
+    if (f.isFolder && f.action !== 'none' && f.class !== 'protected') containers.add(normalizePath(f.path))
+  }
+  for (const c of devcaches?.caches ?? []) {
+    if (!c.isPresent) continue
+    for (const r of c.roots) if (r.status === 'ok') containers.add(normalizePath(r.path))
+  }
+  if (containers.size === 0) return
+  const roots = [...containers].map(p => (p.endsWith('\\') ? p : `${p}\\`))
+  let w = 0
+  for (const f of findings) {
+    const p = normalizePath(f.path)
+    const isNested = f.action !== 'none' && f.class !== 'protected' && roots.some(r => p.startsWith(r))
+    if (!isNested) findings[w++] = f
+  }
+  findings.length = w
+}
+
 export type ScanInputs = {
   walk: RawWalk | null
   windows: RawWindows | null
@@ -443,6 +470,7 @@ export function classifyScan(inputs: ScanInputs, ctx: ClassifyContext): Classifi
   if (inputs.devcaches) for (const f of devCacheFindings(inputs.devcaches, ctx)) push(f)
   if (inputs.leftovers) for (const f of leftoverFindings(inputs.leftovers, ctx)) push(f)
   if (win !== null) for (const f of windowsFindings(win, ctx)) push(f)
+  dropNested(findings, inputs.devcaches ?? null)
   findings.sort((a, b) => b.bytes - a.bytes)
 
   const cappedKinds = new Set((walk?.candidateTotals ?? []).filter(t => t.isCapped).map(t => t.kind as string))

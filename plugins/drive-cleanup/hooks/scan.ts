@@ -1,9 +1,11 @@
 import type { EngineInterface } from 'claude-code'
+import { isCleanupBusy } from './lock.ts'
 import { atom, update } from 'claude-code'
 import type { DcProgress, DcStep, DcSummary } from '../types'
 import { CATEGORY_LABEL, CLASS_LABEL, classifyScan, type Classified } from './core/classify.ts'
 import { mergeHash } from './core/duplicates.ts'
 import { windowsRecommendations } from './core/recommend.ts'
+import { spaceRecommendations } from './core/space.ts'
 import { STEP_LABEL, STEP_ORDER } from './core/scripts.ts'
 import type {
   ClassifyContext,
@@ -114,6 +116,12 @@ export function startScan($: EngineInterface, only?: StepId): Promise<ScanOutcom
   if (running !== undefined) {
     return Promise.resolve({ status: 'refused', message: 'A deep scan is already running.' })
   }
+  if (isCleanupBusy()) {
+    return Promise.resolve({
+      status: 'refused',
+      message: 'A cleanup, restore or purge is running. Scan again when it has finished.',
+    })
+  }
   isCancelRequested = false
   running = performScan($, only).finally(() => {
     running = undefined
@@ -220,7 +228,8 @@ async function performScan($: EngineInterface, only: StepId | undefined): Promis
   const meta: ScanMeta = {
     scanId,
     createdAt,
-    finishedAt: new Date().toISOString(),
+    // A retried step keeps the scan's age: the walk it merges into is as old as before.
+    finishedAt: previous?.meta.finishedAt ?? new Date().toISOString(),
     steps,
     isPcGuardianInstalled: await detectPcGuardian($),
     dataFolder: folder.path,
@@ -347,7 +356,7 @@ export async function loadLatestScan($: EngineInterface): Promise<LoadedScan | u
     done,
     ctx,
     classified: classifyScan({ walk, windows, devcaches, leftovers, hash, done }, ctx),
-    recommendations: windowsRecommendations(volume, windows),
+    recommendations: [...windowsRecommendations(volume, windows), ...spaceRecommendations({ volume, walk, devcaches })],
   }
   cached = scan
   return scan

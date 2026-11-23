@@ -165,7 +165,9 @@ $resumeAt = $null
 $groups = [System.Collections.Generic.List[object]]::new()
 
 foreach ($size in $sizes) {
-    if ($stopwatch.ElapsedMilliseconds -ge $budgetMs) {
+    # A group of big files can take minutes: stop before one that cannot finish in time (at a cautious 80 MB/s).
+    $needMs = [double]$bySize[$size].Count * [double]$size / 80MB * 1000
+    if ($stopwatch.ElapsedMilliseconds -ge $budgetMs -or ($hashed -gt 0 -and $stopwatch.ElapsedMilliseconds + $needMs -gt $budgetMs)) {
         $isTruncated = $true
         $resumeAt = [double]($size + 1)
         break

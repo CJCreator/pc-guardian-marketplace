@@ -1,4 +1,5 @@
 import type { EngineInterface } from 'claude-code'
+import { isCleanupBusy, setCleanupBusy } from './lock.ts'
 import { ELEVATED_TASKS, elevatedEstimate, elevatedSummary, type ElevatedTaskId } from './core/elevated.ts'
 import { MAX_SCAN_AGE_HOURS, planCleanup, type Plan } from './core/plan.ts'
 import {
@@ -45,8 +46,7 @@ const INDEX_FILE = 'runs/index.json'
 const MANIFEST_FILE = 'manifest/deletion_manifest.csv'
 const MANIFEST_LIMIT = 3_500_000
 
-let busy = false
-export const isCleanupBusy = (): boolean => busy
+export { isCleanupBusy }
 
 async function confirm($: EngineInterface, question: string, yes: string): Promise<boolean> {
   try {
@@ -150,8 +150,9 @@ function emptyPlan(scan: LoadedScan, runId: string): OkPlan {
 }
 
 async function exclusive($: EngineInterface, work: () => Promise<CleanOutcome>): Promise<CleanOutcome> {
-  if (busy) return { status: 'busy', message: 'Another cleanup, restore or purge is running. Wait for it to finish.' }
-  busy = true
+  if (isCleanupBusy())
+    return { status: 'busy', message: 'Another cleanup, restore or purge is running. Wait for it to finish.' }
+  setCleanupBusy(true)
   try {
     return await work()
   } catch {
@@ -159,7 +160,7 @@ async function exclusive($: EngineInterface, work: () => Promise<CleanOutcome>):
     await say($, message)
     return { status: 'refused', message }
   } finally {
-    busy = false
+    setCleanupBusy(false)
   }
 }
 
@@ -311,6 +312,15 @@ async function act(
       const parsed = ran.status === 'ok' ? parseOutput(RawApplyCheck, ran.stdout, 'apply.ps1') : ran
       if (parsed.status !== 'ok') {
         messages.push(`The file cleanup did not run or did not report: ${parsed.detail}`)
+        // Stopped before it reported: what it moved so far is in restore.json (saved after each move).
+        const moved = await readMovedSoFar($, approved.list.quarantineRoot, runId)
+        quarantinedBytes += moved?.bytes ?? 0
+        quarantineDir = moved?.dir ?? quarantineDir
+        results.push(...(moved?.items ?? []))
+        if (moved !== null)
+          messages.push(
+            `${String(moved.items.length)} items were already moved to quarantine and can be put back; the rest was not done.`,
+          )
       } else if (parsed.data.status === 'refused') {
         messages.push(parsed.data.detail)
       } else {
@@ -322,11 +332,19 @@ async function act(
         if (data.isTruncated) messages.push('The time limit was reached; run the cleanup again for the rest.')
       }
     }
-    for (const job of approved.caches) {
+    // The Recycle Bin first: it alone keeps the approval time, which must stay under 15 minutes old.
+    const jobs = approved.caches.toSorted(
+      (x, y) => Number(y.cacheId === 'recycle_bin') - Number(x.cacheId === 'recycle_bin'),
+    )
+    for (const job of jobs) {
       await say($, `Cleaning ${job.label}…`, 'working')
+      // The person's yes covers every job of this run; jobs run one after another
+      // (apply can take 10 minutes, each cache 5), so a cache gets the time it
+      // starts rather than expiring under the script's 15-minute rule. The
+      // Recycle Bin keeps the approval time: only what was deleted before the yes goes.
       const ran = await runAction($, 'cleanCache', {
         DC_CACHE_ID: job.cacheId,
-        DC_APPROVED_AT: approved.list.approvedAt,
+        DC_APPROVED_AT: job.cacheId === 'recycle_bin' ? approved.list.approvedAt : new Date().toISOString(),
       })
       const parsed = ran.status === 'ok' ? parseOutput(RawCacheCleanCheck, ran.stdout, 'clean-cache.ps1') : ran
       if (parsed.status !== 'ok') {
@@ -343,6 +361,15 @@ async function act(
           id: job.findingId,
           status: 'skipped',
           detail: parsed.data.detail,
+          destination: null,
+          sha256: null,
+          bytes: 0,
+        })
+      } else if (parsed.data.removedCount === 0 && parsed.data.skippedCount > 0) {
+        results.push({
+          id: job.findingId,
+          status: 'skipped',
+          detail: `Nothing removed: all ${String(parsed.data.skippedCount)} files were in use or newer.`,
           destination: null,
           sha256: null,
           bytes: 0,
@@ -402,7 +429,7 @@ async function act(
   if (after !== undefined) await refreshSummary($, after)
   const undo =
     record.quarantinedBytes > 0
-      ? ' Changed your mind? /drive-cleanup:undo-cleanup, or the Undo tab in the pane, puts files back.'
+      ? ' Changed your mind? /drive-cleanup:quarantine, or the Undo tab in the pane, puts files back.'
       : ''
   const summary = `Done: ${runSummaryText(record)}${messages.length > 0 ? ` ${messages.join(' ')}` : ''}${undo}`
   await say($, summary)
@@ -445,6 +472,43 @@ async function runAdminTasks(
   return { items, messages: [], bytes }
 }
 
+/** What an interrupted apply.ps1 already moved, from the restore.json it saves after each move. */
+async function readMovedSoFar(
+  $: EngineInterface,
+  root: string,
+  runId: string,
+): Promise<{ dir: string; bytes: number; items: ItemResult[] } | null> {
+  if (!/^[A-Za-z]:\\Drive Cleanup Quarantine$/.test(root)) return null
+  const dir = `${root}\\${runId}`
+  let doc: unknown
+  try {
+    doc = JSON.parse(await $.fs.read(`${dir}\\restore.json`))
+  } catch {
+    return null
+  }
+  const list = (doc as { runId?: unknown; items?: unknown }).items
+  if ((doc as { runId?: unknown }).runId !== runId) return null
+  const rows = (Array.isArray(list) ? list : [list]) as {
+    id?: unknown
+    destination?: unknown
+    sha256?: unknown
+    bytes?: unknown
+    state?: unknown
+  }[]
+  const items: ItemResult[] = rows
+    .filter(r => r !== null && typeof r === 'object' && r.state === 'quarantined' && typeof r.id === 'string')
+    .map(r => ({
+      id: String(r.id),
+      status: 'quarantined' as const,
+      detail: '',
+      destination: typeof r.destination === 'string' ? r.destination : null,
+      sha256: typeof r.sha256 === 'string' ? r.sha256 : null,
+      bytes: typeof r.bytes === 'number' ? r.bytes : 0,
+    }))
+  if (items.length === 0) return null
+  return { dir, bytes: items.reduce((sum, i) => sum + i.bytes, 0), items }
+}
+
 /** Says `message` in the pane and returns it, for Claude's answer. */
 async function tell($: EngineInterface, message: string): Promise<string> {
   await say($, message)
@@ -453,8 +517,8 @@ async function tell($: EngineInterface, message: string): Promise<string> {
 
 /** Puts a quarantine run back, after its own confirmation. Returns what happened. */
 export async function restoreRun($: EngineInterface, runId: string): Promise<string> {
-  if (busy) return 'Another cleanup, restore or purge is running. Wait for it to finish.'
-  busy = true
+  if (isCleanupBusy()) return 'Another cleanup, restore or purge is running. Wait for it to finish.'
+  setCleanupBusy(true)
   try {
     const index = await readRunIndex($)
     const entry = index.find(e => e.runId === runId && e.kind === 'cleanup')
@@ -519,32 +583,33 @@ export async function restoreRun($: EngineInterface, runId: string): Promise<str
     $.ui.toast(summary)
     return summary
   } finally {
-    busy = false
+    setCleanupBusy(false)
   }
 }
 
-/** Deletes one quarantine run for good, after its own confirmation. */
-export async function purgeRun($: EngineInterface, runId: string): Promise<void> {
-  if (busy) return
-  busy = true
+/** Deletes one quarantine run for good, after its own confirmation. Returns what happened. */
+export async function purgeRun($: EngineInterface, runId: string): Promise<string> {
+  if (isCleanupBusy()) return 'Another cleanup, restore or purge is running. Wait for it to finish.'
+  setCleanupBusy(true)
   try {
     const index = await readRunIndex($)
     const entry = index.find(e => e.runId === runId && e.kind === 'cleanup')
     if (entry === undefined || entry.quarantineRoot === null || entry.quarantineState === 'purged') {
-      return await say($, 'That quarantine run cannot be deleted.')
+      return await tell($, 'That quarantine run cannot be deleted.')
     }
     const isYes = await confirm(
       $,
-      `Delete the quarantine of ${entry.startedAt.slice(0, 16).replace('T', ' ')} (${fmtBytes(entry.quarantinedBytes)}) for good? This cannot be undone.`,
+      `Delete the quarantine of ${entry.startedAt.slice(0, 16).replace('T', ' ')} (${fmtBytes(entry.quarantinedBytes)}) for good? Those files cannot be put back afterwards.`,
       'Delete for good',
     )
-    if (!isYes) return await say($, 'Nothing was deleted.')
+    if (!isYes) return await tell($, 'Nothing was deleted.')
     await say($, 'Deleting the quarantine run…', 'working')
     const startedAt = new Date().toISOString()
     const ran = await runAction($, 'purge', { DC_RUN_ID: runId, DC_QUARANTINE_ROOT: entry.quarantineRoot })
     const parsed = ran.status === 'ok' ? parseOutput(RawPurgeCheck, ran.stdout, 'purge.ps1') : ran
-    if (parsed.status !== 'ok') return await say($, `It did not run: ${parsed.detail}`)
-    if (parsed.data.status === 'refused') return await say($, parsed.data.detail)
+    if (parsed.status !== 'ok') return await tell($, `It did not run: ${parsed.detail}`)
+    if (parsed.data.status === 'refused') return await tell($, parsed.data.detail)
+    const purged = parsed.data
     const record: RunRecord = {
       runId: crypto.randomUUID(),
       kind: 'purge',
@@ -563,13 +628,20 @@ export async function purgeRun($: EngineInterface, runId: string): Promise<void>
     }
     await saveRun($, record, list => [
       indexEntry(record, runId),
-      ...list.map(e => (e.runId === runId ? { ...e, quarantineState: 'purged' as const } : e)),
+      // Anything left (in use, denied) keeps the run active, so Delete for good can be tried again.
+      ...list.map(e =>
+        e.runId === runId && purged.failedCount === 0 ? { ...e, quarantineState: 'purged' as const } : e,
+      ),
     ])
-    const summary = `Quarantine deleted: ${runSummaryText(record)}`
+    const summary =
+      purged.failedCount === 0
+        ? `Quarantine deleted: ${runSummaryText(record)}`
+        : `Quarantine partly deleted: ${runSummaryText(record)} ${String(purged.failedCount)} items could not be removed (in use or denied); Delete for good again later to finish.`
     await say($, summary)
     $.ui.toast(summary)
+    return summary
   } finally {
-    busy = false
+    setCleanupBusy(false)
   }
 }
 

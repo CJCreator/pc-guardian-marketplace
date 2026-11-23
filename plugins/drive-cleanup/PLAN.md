@@ -91,7 +91,7 @@ Each rule has a test (§14) that names it.
 | S2 | **No links are followed.** Junctions, symbolic links and mount points are counted as entries and never walked. Cloud placeholder files (`RECALL_ON_DATA_ACCESS`, `RECALL_ON_OPEN`, `OFFLINE`) are never opened, so OneDrive never downloads them. | Shared walker function in every script; fixture drive with links and placeholders. |
 | S3 | **Only allowlisted scripts run**, by id, after their SHA-256 matches the hash recorded at build time, as the current user. No caller text reaches a command line. **Administrator rights** only for the fixed tasks of §20, only after the person's yes and Windows' own UAC prompt, with the fingerprint checked again inside the elevated process and the checked text run from memory. *(Changed in 1.2; it was: never elevated.)* | `safe-shell.ts` (`runAllowlisted`, `runElevated`), `core/elevated.ts`. |
 | S4 | **Protected paths can never be acted on** (§2.2). The rule lives in core and is repeated as a refusal at the top of every action script. | Core classifier; each action script's guard; tests for every rule. |
-| S5 | **Only the person approves.** An action runs only after the person answers yes in Claude Code's own dialog: to Clean selected in the pane, or to a proposal Claude made with `propose_cleanup` (§19). Claude can propose and ask, never answer. Cleanup must be on (the proposal's dialog can turn it on, by the person's answer), the scan under 24 hours old, no scan running. A dismissed dialog, or a `-p` session with no one to ask, changes nothing. Purging a quarantine is the pane's alone. *(Changed in 1.1, §19; it was: never from a Claude tool.)* | `cleanup.ts` is the only module that calls `runAction`; both paths go through `planCleanup` and `act`; engine tests for no answer, cooldown and refusals. |
+| S5 | **Only the person approves.** An action runs only after the person answers yes in Claude Code's own dialog: to Clean selected in the pane, or to a proposal Claude made with `propose_cleanup` (§19). Claude can propose and ask, never answer. Cleanup must be on (the proposal's dialog can turn it on, by the person's answer), the scan under 24 hours old, no scan running. A dismissed dialog, or a `-p` session with no one to ask, changes nothing. Deleting a quarantine for good is asked the same way, run by run (`empty_quarantine`, §21). *(Changed in 1.1, §19, and 1.5, §21; it was: never from a Claude tool, then purge in the pane only.)* | `cleanup.ts` is the only module that calls `runAction`; both paths go through `planCleanup` and `act`; engine tests for no answer, cooldown and refusals. |
 | S6 | **Personal files are moved, not deleted.** Every class B item is quarantined and can be restored. Only class A items (re-creatable data) are deleted. | Action selection is a function of class, not a user choice; the review screen shows which action each item gets. |
 | S7 | **Re-check before acting.** Just before each item is touched, the action script confirms it still matches the scan: same path, not a link, same size and modified time, and the same SHA-256 for duplicates and quarantined files. Anything that changed is skipped and reported. | Action scripts. |
 | S8 | **Nothing is lost in a move.** A cross-drive move copies, verifies the copy's SHA-256 against the source, and only then deletes the source. A same-drive move is a rename. | `quarantine-move.ps1`. |
@@ -922,3 +922,62 @@ registry, any user file (those go through §7 and quarantine).
 Built and unit-tested (launch checks, fingerprint-before-run order, encoding round-trip, static rules on
 `elevated.ps1`, estimates, the dialog line); engine-tested for refusals. **Never run on Windows**: UAC,
 DISM, the services and the bootstrap need TESTING.md §7 on a Windows VM before release.
+
+## 21. Three commands, and using the space well (1.5)
+
+### 21.1 Three commands
+
+Ten skills became three, each for one moment:
+
+| Command | When | Changes |
+| --- | --- | --- |
+| `/drive-cleanup:scan [fresh \| duplicates \| caches \| reports \| a question]` | Before: what uses C: and how to get space back (clean, Windows, move) | Nothing |
+| `/drive-cleanup:free-space [target]` | Clean: one proposal, one question | On the person's yes |
+| `/drive-cleanup:quarantine [restore \| empty \| check]` | After: put back, delete for good, verify | On the person's yes |
+
+`scan` also answers plain questions ("why is C: full?"), so the old model-only skills (audit,
+drive-audit, duplicates, dev-caches, report, self-check, review, verify, undo-cleanup) are folded in.
+
+### 21.2 Use the space, not only clean it
+
+Cleaning gives space back once; caches and downloads refill it. `get_recommendations` (was
+`get_windows_recommendations`) adds, from data the scan already has (no script changed):
+
+| Id | When | Advice |
+| --- | --- | --- |
+| `move_personal_folders` | Videos, Pictures, Music, Documents, Downloads or Desktop ≥ 5 GB and another NTFS/ReFS drive keeps 10 % and 10 GB free after | Properties > Location > Move… |
+| `new_content_location` | Another drive with room for 50 GB | Settings > Storage > Where new content is saved; game libraries |
+| `move_dev_caches` | Moveable developer caches ≥ 5 GB | Each tool's own setting (`npm config set cache`, `PIP_CACHE_DIR`, `NUGET_PACKAGES`, `GRADLE_USER_HOME`, Maven `localRepository`, pnpm `store-dir`, Docker disk location) |
+| `virtual_disks` | A `.vhdx` ≥ 5 GB among the largest files | Prune inside, `wsl --manage <name> --set-sparse true`, `--move`; never delete the file |
+| `onedrive_files` | A OneDrive folder ≥ 5 GB downloaded | Free up space (Files On-Demand) |
+| `quarantine_waiting` | Active quarantine older than 14 days, or any on the system drive (frees nothing there) | Check, then restore or delete for good |
+
+All are steps for the person; Drive Cleanup moves no folder and changes no setting for them.
+
+### 21.3 Deleting a quarantine for good from Claude
+
+`empty_quarantine { runId }` asks in Claude Code's dialog ("Delete … for good? Those files cannot be put
+back afterwards.") and runs the same `purge.ps1` as the pane. The skill asks Claude to use it only when the
+person asks, run by run, and never in the same answer as the cleanup that made the quarantine. Without an
+answer (dismissed, `-p`) nothing is deleted.
+
+### 21.4 Review fixes (1.5)
+
+An end-to-end review (scripts and TypeScript, read only: no Windows run yet) found and fixed: the empty
+quarantine root that stopped every delete-only `apply.ps1` run; `restore.json` saved only every 50 moves;
+partial cross-drive folder moves; duplicate copies leaving inside a selected folder; nested findings
+counted twice; empty-folder-only selections; the 10-minute cap on administrator tasks; a junction race in
+the elevated `Windows\Temp` cleanup; quarantine folders readable by every local account and a restore
+that trusted `restore.json`'s original paths; OneDrive, other browsers and mail stores unprotected; scans
+during a cleanup; stale approvals for later cache jobs. See CHANGELOG 1.5.0-beta.1.
+
+Known and left open (each needs a Windows run to settle):
+
+| Gap | Effect | Plan |
+| --- | --- | --- |
+| Paths over 260 characters | Windows PowerShell 5.1 cannot open them: counted as denied, skipped when cleaning | Measure on Windows; `\\?\` prefixes in the scripts if common |
+| External USB hard disks report as fixed (`DriveType=3`) | "Auto" may quarantine to a disk that is later unplugged; Restore then fails until it is back | Prefer internal disks (MSFT_Disk BusType) after testing |
+| 8.3 short names (`PROGRA~1`) | Not expanded by the guards; scan paths are long names, so not reachable today | `GetLongPathName` in `apply.ps1` |
+| A `'` or `$` in the user or plugin path | Administrator tasks refuse to start (message unclear) | Escape instead of refusing |
+| `large_old` has no user-area gate in `walk.ps1` | Wider than documented; `apply.ps1` and the protections still refuse system files | Gate after the first Windows run |
+| A partial Restore leaves the run's size unchanged in the index | Next prompt overstates what is left | Recompute from `restore.json` |

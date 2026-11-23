@@ -40,10 +40,23 @@ function New-Result([string]$id) {
     return [ordered]@{ id = $id; status = 'done'; removedBytes = 0.0; removedCount = 0; skippedCount = 0; detail = '' }
 }
 
+$trustedOwners = @('S-1-5-18', 'S-1-5-32-544', 'S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464')
+
+# True when Windows or an administrator owns the folder: a folder a standard user
+# made (in Windows\Temp anyone can) could be swapped for a junction while this
+# elevated script works in it, so it is never entered.
+function Test-TrustedFolder([string]$path) {
+    try {
+        $owner = [IO.Directory]::GetAccessControl($path, [Security.AccessControl.AccessControlSections]::Owner).GetOwner([Security.Principal.SecurityIdentifier]).Value
+        return $trustedOwners -contains $owner
+    } catch { return $false }
+}
+
 # Deletes files under $root (never $root itself) last written before $before
 # whose name matches $pattern. Skips links, files in use and anything it cannot
-# delete. Removes subfolders it emptied.
-function Remove-Files($result, [string]$root, [string]$pattern, [datetime]$before, [bool]$recurse) {
+# delete. Removes subfolders it emptied. With $trustedOnly, enters only folders
+# Windows or an administrator owns.
+function Remove-Files($result, [string]$root, [string]$pattern, [datetime]$before, [bool]$recurse, [bool]$trustedOnly = $false) {
     if (-not [IO.Directory]::Exists($root)) { $result.status = 'missing'; return }
     $rootInfo = [IO.DirectoryInfo]::new($root)
     if (($rootInfo.Attributes -band $reparse) -ne 0) {
@@ -55,11 +68,16 @@ function Remove-Files($result, [string]$root, [string]$pattern, [datetime]$befor
     while ($pending.Count -gt 0) {
         if ($budget.ElapsedMilliseconds -ge $budgetMs) { $result.detail = 'Stopped at the time limit.'; break }
         $dir = $pending.Pop()
+        # Checked again just before entering: it may have become a link since it was listed.
+        if ($dir -ne $root) {
+            try { if (([IO.File]::GetAttributes($dir) -band $reparse) -ne 0) { $result.skippedCount++; continue } } catch { continue }
+            if ($trustedOnly -and -not (Test-TrustedFolder $dir)) { $result.skippedCount++; continue }
+        }
         try { $children = [IO.DirectoryInfo]::new($dir).GetFileSystemInfos() } catch { $result.skippedCount++; continue }
         foreach ($child in $children) {
             if (($child.Attributes -band $reparse) -ne 0) { continue }
             if (($child.Attributes -band $directoryFlag) -ne 0) {
-                if ($recurse) { $pending.Push($child.FullName); $folders.Add($child.FullName) }
+                if ($recurse -and (-not $trustedOnly -or (Test-TrustedFolder $child.FullName))) { $pending.Push($child.FullName); $folders.Add($child.FullName) }
                 continue
             }
             if ($child.Name -notlike $pattern) { continue }
@@ -112,7 +130,7 @@ foreach ($task in $Tasks) {
     try {
         switch ($task) {
             'windows_temp' {
-                Remove-Files $r (Join-Path $windir 'Temp') '*' $now.AddDays(-7) $true
+                Remove-Files $r (Join-Path $windir 'Temp') '*' $now.AddDays(-7) $true $true
             }
             'memory_dumps' {
                 Remove-OneFile $r (Join-Path $windir 'MEMORY.DMP')

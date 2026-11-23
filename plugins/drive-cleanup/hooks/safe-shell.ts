@@ -107,26 +107,28 @@ export async function runElevated(
   const refusal = checkLaunch(launch)
   if (refusal !== null) return { status: 'failed', detail: `Not started: ${refusal}.` }
 
-  let ran: Awaited<ReturnType<EngineInterface['process']['run']>>
-  try {
-    ran = await $.process.run(
-      [
-        launch.powershellPath,
-        '-NoProfile',
-        '-NonInteractive',
-        '-ExecutionPolicy',
-        'Bypass',
-        '-EncodedCommand',
-        encodeCommand(launcherScript(launch)),
-      ],
-      { timeoutMs: ELEVATED_TIMEOUT_MS, env: {} },
-    )
-  } catch {
+  // process.run stops at ten minutes and DISM can take thirty: stream the
+  // launcher instead, which ends when the elevated process does.
+  const stdout = await runLong(
+    $,
+    [
+      launch.powershellPath,
+      '-NoProfile',
+      '-NonInteractive',
+      '-ExecutionPolicy',
+      'Bypass',
+      '-EncodedCommand',
+      encodeCommand(launcherScript(launch)),
+    ],
+    ELEVATED_TIMEOUT_MS,
+  )
+  if (stdout === null) {
     return {
       status: 'failed',
-      detail: `The administrator tasks did not finish within ${String(ELEVATED_TIMEOUT_MS / 60_000)} minutes.`,
+      detail: `The administrator tasks did not finish within ${String(ELEVATED_TIMEOUT_MS / 60_000)} minutes. Windows may still be finishing them; scan again later to see the result.`,
     }
   }
+  const ran = { stdout }
   const launched = parseOutput(RawElevatedLaunchCheck, ran.stdout, 'launcher')
   if (launched.status !== 'ok') return { status: 'failed', detail: `The launcher did not report: ${launched.detail}` }
   if (launched.data.status === 'declined')
@@ -140,6 +142,29 @@ export async function runElevated(
   if (parsed.status !== 'ok') return { status: 'failed', detail: parsed.detail }
   if (parsed.data.status === 'refused') return { status: 'failed', detail: parsed.data.detail }
   return { status: 'ok', result: parsed.data }
+}
+
+/** Runs `argv` to its end (up to `timeoutMs`) and returns its stdout, or null when it could not start or ran too long. */
+async function runLong($: EngineInterface, argv: readonly string[], timeoutMs: number): Promise<string | null> {
+  const child = $.process.spawn({ argv, env: {} })
+  const stop = new AbortController()
+  const collect = (async (): Promise<string | null> => {
+    let out = ''
+    try {
+      for await (const piece of child) if (piece.stream === 'stdout') out += piece.text
+    } catch {
+      return null
+    }
+    return out
+  })()
+  const timeout = $.clock.sleep(timeoutMs, { signal: stop.signal }).then(
+    () => null,
+    () => null,
+  )
+  const out = await Promise.race([collect, timeout])
+  stop.abort()
+  if (out === null) await child.return(undefined as never).catch(() => null)
+  return out
 }
 
 /**
