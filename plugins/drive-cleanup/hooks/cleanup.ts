@@ -1,5 +1,6 @@
 import type { EngineInterface } from 'claude-code'
-import { planCleanup, type Plan } from './core/plan.ts'
+import { ELEVATED_TASKS, elevatedSummary, type ElevatedTaskId } from './core/elevated.ts'
+import { MAX_SCAN_AGE_HOURS, planCleanup, type Plan } from './core/plan.ts'
 import {
   ANSWERS,
   DECLINE_COOLDOWN_MS,
@@ -18,7 +19,7 @@ import {
 } from './core/runs.ts'
 import type { Finding, ItemResult, RawApply, RunRecord, Settings } from './core/types.ts'
 import { parseOutput, RawApplyCheck, RawCacheCleanCheck, RawPurgeCheck } from './core/validate.ts'
-import { runAction } from './safe-shell.ts'
+import { runAction, runElevated } from './safe-shell.ts'
 import { readDataFile, writeDataFile } from './safe-writer.ts'
 import {
   invalidateScan,
@@ -119,6 +120,34 @@ function planFor(scan: LoadedScan, ids: readonly string[], settings: Settings, r
   })
 }
 
+/** The planner's freshness rules, for a proposal with no files (administrator tasks only). */
+function checkFreshness(scan: LoadedScan): string | null {
+  if (isScanRunning()) return 'A scan is running. Wait for it to finish.'
+  const ageHours = (Date.now() - Date.parse(scan.meta.finishedAt)) / 3_600_000
+  if (!(ageHours >= 0 && ageHours <= MAX_SCAN_AGE_HOURS))
+    return `The scan is more than ${String(MAX_SCAN_AGE_HOURS)} hours old. Run a new deep scan first.`
+  return null
+}
+
+function emptyPlan(scan: LoadedScan, runId: string): OkPlan {
+  return {
+    status: 'ok',
+    list: {
+      runId,
+      scanId: scan.meta.scanId,
+      approvedAt: new Date().toISOString(),
+      scanFinishedAt: scan.meta.finishedAt,
+      quarantineRoot: '',
+      items: [],
+    },
+    caches: [],
+    deleteBytes: 0,
+    quarantineBytes: 0,
+    itemCount: 0,
+    summary: '',
+  }
+}
+
 async function exclusive($: EngineInterface, work: () => Promise<CleanOutcome>): Promise<CleanOutcome> {
   if (busy) return { status: 'busy', message: 'Another cleanup, restore or purge is running. Wait for it to finish.' }
   busy = true
@@ -179,8 +208,15 @@ export async function proposeCleanup($: EngineInterface, input: ProposalInput): 
     const settings = await loadSettings($)
     const runId = crypto.randomUUID()
     // Planned as if cleanup were on, so the person sees the real plan before deciding to turn it on.
-    const preview = planFor(scan, picked.ids, { ...settings, cleanupEnabled: true }, runId)
-    if (preview.status !== 'ok') return { status: 'refused', message: preview.message }
+    let summary = ''
+    if (picked.ids.length > 0) {
+      const preview = planFor(scan, picked.ids, { ...settings, cleanupEnabled: true }, runId)
+      if (preview.status !== 'ok') return { status: 'refused', message: preview.message }
+      summary = preview.summary
+    } else {
+      const fresh = checkFreshness(scan)
+      if (fresh !== null) return { status: 'refused', message: fresh }
+    }
     const yes = settings.cleanupEnabled ? ANSWERS.clean : ANSWERS.turnOnAndClean
     let answer = ''
     try {
@@ -188,8 +224,9 @@ export async function proposeCleanup($: EngineInterface, input: ProposalInput): 
         proposalQuestion({
           findings: scan.classified.findings,
           ids: picked.ids,
-          summary: preview.summary,
+          summary,
           isCleanupOn: settings.cleanupEnabled,
+          elevatedLine: elevatedSummary(picked.elevated, scan.windows),
         }),
         { header: 'Drive Cleanup', options: [yes, ANSWERS.review, ANSWERS.cancel] },
       )
@@ -197,12 +234,16 @@ export async function proposeCleanup($: EngineInterface, input: ProposalInput): 
       answer = ''
     }
     if (answer === ANSWERS.review) {
+      if (picked.ids.length === 0) {
+        declinedAt = Date.now()
+        return { status: 'cancelled', message: 'There is no file list for administrator tasks. Nothing was changed.' }
+      }
       await setSelection($, () => ({ scanId: scan.meta.scanId, ids: picked.ids }))
       await setView($, { name: 'review', category: null, page: 0 })
       await $.ui.open({ id: PANE_ID, title: 'Drive Cleanup' })
       return {
         status: 'review',
-        message: `The ${String(picked.ids.length)} proposed items are selected in the Drive Cleanup pane (Review). The person changes the selection and presses Clean selected there; nothing was changed yet.`,
+        message: `The ${String(picked.ids.length)} proposed items are selected in the Drive Cleanup pane (Review). The person changes the selection and presses Clean selected there; nothing was changed yet.${picked.elevated.length > 0 ? ' The administrator tasks were not started; propose them again on their own if the person wants them.' : ''}`,
       }
     }
     if (answer !== yes) {
@@ -210,7 +251,7 @@ export async function proposeCleanup($: EngineInterface, input: ProposalInput): 
       return { status: 'cancelled', message: 'The person did not approve. Nothing was changed.' }
     }
     if (!settings.cleanupEnabled) await saveSettings($, s => ({ ...s, cleanupEnabled: true }))
-    const outcome = await act($, scan, picked.ids, runId)
+    const outcome = await act($, scan, picked.ids, runId, picked.elevated)
     if (outcome.status === 'done' && picked.skipped.length > 0) {
       return {
         ...outcome,
@@ -222,17 +263,32 @@ export async function proposeCleanup($: EngineInterface, input: ProposalInput): 
 }
 
 /** Plans again at the moment of acting, so the approval the scripts check is fresh, then acts and records. */
-async function act($: EngineInterface, scan: LoadedScan, ids: readonly string[], runId: string): Promise<CleanOutcome> {
+async function act(
+  $: EngineInterface,
+  scan: LoadedScan,
+  ids: readonly string[],
+  runId: string,
+  elevated: readonly ElevatedTaskId[] = [],
+): Promise<CleanOutcome> {
   const settings = await loadSettings($)
-  const fresh = planFor(scan, ids, settings, runId)
-  if (fresh.status !== 'ok') return { status: 'refused', message: fresh.message }
-  const approved: OkPlan = fresh
+  if (!settings.cleanupEnabled) return { status: 'refused', message: 'Cleanup is off.' }
+  let approved: OkPlan
+  if (ids.length > 0) {
+    const fresh = planFor(scan, ids, settings, runId)
+    if (fresh.status !== 'ok') return { status: 'refused', message: fresh.message }
+    approved = fresh
+  } else {
+    const stale = checkFreshness(scan)
+    if (stale !== null) return { status: 'refused', message: stale }
+    approved = emptyPlan(scan, runId)
+  }
   const startedAt = new Date().toISOString()
-  await say($, `Cleaning ${String(approved.itemCount)} items…`, 'working')
+  await say($, `Cleaning ${String(approved.itemCount + elevated.length)} items…`, 'working')
   $.ui.status('Drive Cleanup: cleaning…')
   const findings = new Map<string, Finding>(scan.classified.findings.map(f => [f.id, f]))
   const results: ItemResult[] = []
   const messages: string[] = []
+  const adminItems: RunRecord['items'] = []
   let deletedBytes = 0
   let quarantinedBytes = 0
   let quarantineDir: string | null = null
@@ -293,6 +349,13 @@ async function act($: EngineInterface, scan: LoadedScan, ids: readonly string[],
         })
       }
     }
+    if (elevated.length > 0) {
+      await say($, 'Windows is asking for administrator permission…', 'working')
+      const admin = await runAdminTasks($, elevated, runId)
+      adminItems.push(...admin.items)
+      messages.push(...admin.messages)
+      deletedBytes += admin.bytes
+    }
   } finally {
     $.ui.status(undefined)
   }
@@ -310,10 +373,11 @@ async function act($: EngineInterface, scan: LoadedScan, ids: readonly string[],
     restoredBytes: 0,
     purgedBytes: 0,
     counts: {
-      done: results.filter(r => r.status !== 'skipped').length,
-      skipped: results.filter(r => r.status === 'skipped').length,
+      done: results.filter(r => r.status !== 'skipped').length + adminItems.filter(i => i.status !== 'skipped').length,
+      skipped:
+        results.filter(r => r.status === 'skipped').length + adminItems.filter(i => i.status === 'skipped').length,
     },
-    items: joinResults(results, findings),
+    items: [...joinResults(results, findings), ...adminItems],
     messages,
   }
   await saveRun($, record, index => [indexEntry(record), ...index])
@@ -329,6 +393,41 @@ async function act($: EngineInterface, scan: LoadedScan, ids: readonly string[],
   await say($, summary)
   $.ui.toast(summary)
   return { status: 'done', record, message: summary }
+}
+
+/** Runs the administrator tasks and turns their results into run items for the manifest. */
+async function runAdminTasks(
+  $: EngineInterface,
+  tasks: readonly ElevatedTaskId[],
+  runId: string,
+): Promise<{ items: RunRecord['items']; messages: string[]; bytes: number }> {
+  const ran = await runElevated($, tasks, runId)
+  if (ran.status !== 'ok')
+    return { items: [], messages: [`${ran.detail} Administrator tasks were not done.`], bytes: 0 }
+  let bytes = 0
+  const items = ran.result.tasks.map(t => {
+    const spec = (ELEVATED_TASKS as Partial<Record<string, (typeof ELEVATED_TASKS)[ElevatedTaskId]>>)[t.id]
+    const isDone = t.status === 'done'
+    if (isDone) bytes += t.removedBytes
+    const notes = [
+      t.status === 'missing' ? 'Nothing there.' : '',
+      t.skippedCount > 0 ? `${String(t.skippedCount)} in use, kept.` : '',
+      t.detail,
+    ]
+    return {
+      id: `elevated:${t.id}`,
+      status: isDone ? ('deleted' as const) : ('skipped' as const),
+      detail: notes.filter(x => x !== '').join(' '),
+      destination: null,
+      sha256: null,
+      bytes: t.removedBytes,
+      path: spec?.label ?? t.id,
+      category: 'windows_managed',
+      reason: spec?.what ?? '',
+      action: 'elevated',
+    }
+  })
+  return { items, messages: [], bytes }
 }
 
 /** Says `message` in the pane and returns it, for Claude's answer. */

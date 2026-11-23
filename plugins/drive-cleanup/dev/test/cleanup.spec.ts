@@ -11,6 +11,17 @@ import { DEV_CACHES, SAFE_CACHE_IDS } from '../../hooks/core/devcaches.ts'
 import { chooseKeeper, duplicateFindings, mergeHash } from '../../hooks/core/duplicates.ts'
 import { protectedBy } from '../../hooks/core/paths.ts'
 import { chooseQuarantineRoot, planCleanup, type PlanInput } from '../../hooks/core/plan.ts'
+import {
+  bootstrapScript,
+  checkLaunch,
+  checkTasks,
+  ELEVATED_TASK_IDS,
+  elevatedSummary,
+  encodeCommand,
+  estimateBytes,
+  launcherScript,
+  type ElevatedLaunch,
+} from '../../hooks/core/elevated.ts'
 import { isActionable, MAX_PROPOSAL_ITEMS, proposalQuestion, selectForProposal } from '../../hooks/core/propose.ts'
 import { finalReport } from '../../hooks/core/reports.ts'
 import { indexEntry, manifestRows, runSummaryText } from '../../hooks/core/runs.ts'
@@ -33,7 +44,7 @@ import {
   RawVerifyCheck,
 } from '../../hooks/core/validate.ts'
 import { parseSettings } from '../../hooks/settings-store.ts'
-import { candidate, ctx, NOW, PROFILE, volume } from './fixtures.ts'
+import { candidate, ctx, NOW, PROFILE, volume, windows } from './fixtures.ts'
 
 const PLUGIN = join(import.meta.dirname, '..', '..')
 const ps = (rel: string): string => readFileSync(join(PLUGIN, 'ps', ...rel.split('/')), 'utf8')
@@ -709,5 +720,100 @@ describe('one-confirm proposals (§19)', () => {
     assert.match(on, new RegExp(`cleaning ${String(ids.length)} items`))
     assert.ok(!on.includes('Cleanup is off'))
     assert.match(proposalQuestion({ findings: fs, ids, summary: plan.summary, isCleanupOn: false }), /^Cleanup is off/)
+  })
+})
+
+const launch = (over: Partial<ElevatedLaunch> = {}): ElevatedLaunch => ({
+  scriptPath: 'C:\\Users\\Asha\\.claude\\plugins\\cache\\techgramam\\drive-cleanup\\ps\\actions\\elevated.ps1',
+  expectedSha256: 'a'.repeat(64),
+  tasks: ['windows_temp', 'memory_dumps'],
+  resultPath:
+    'C:\\Users\\Asha\\AppData\\Roaming\\techgramam-drive-cleanup\\elevated\\11111111-2222-3333-4444-555555555555.json',
+  powershellPath: 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe',
+  ...over,
+})
+const decode = (b64: string): string => {
+  const bin = atob(b64)
+  let out = ''
+  for (let i = 0; i < bin.length; i += 2)
+    out += String.fromCodePoint(bin.codePointAt(i)! | (bin.codePointAt(i + 1)! << 8))
+  return out
+}
+
+describe('administrator tasks (§20)', () => {
+  it('task ids are checked, deduplicated and put in a fixed order', () => {
+    assert.equal(checkTasks(['windows_temp; Remove-Item C:\\']).status, 'refused')
+    assert.deepEqual((checkTasks(['component_store', 'windows_temp', 'windows_temp']) as { tasks: string[] }).tasks, [
+      'windows_temp',
+      'component_store',
+    ])
+  })
+  it('only launches what Drive Cleanup builds', () => {
+    assert.equal(checkLaunch(launch()), null)
+    assert.match(checkLaunch(launch({ scriptPath: "C:\\x\\ps\\actions\\elevated.ps1'; calc; '" })) ?? '', /script path/)
+    assert.match(checkLaunch(launch({ scriptPath: 'C:\\x\\ps\\actions\\apply.ps1' })) ?? '', /script path/)
+    assert.match(checkLaunch(launch({ resultPath: 'C:\\Windows\\System32\\config\\SAM' })) ?? '', /run id/)
+    assert.match(checkLaunch(launch({ powershellPath: 'C:\\Users\\Asha\\powershell.exe' })) ?? '', /System32/)
+    assert.match(checkLaunch(launch({ expectedSha256: 'nope' })) ?? '', /SHA-256/)
+    assert.match(checkLaunch(launch({ tasks: [] })) ?? '', /no valid task/)
+  })
+  it('the elevated bootstrap checks the fingerprint before running, and runs the checked text from memory', () => {
+    const b = bootstrapScript(launch())
+    assert.ok(b.includes(`$expected = '${'a'.repeat(64)}'`))
+    assert.ok(b.includes("$tasks = @('windows_temp', 'memory_dumps')"))
+    const hashAt = b.indexOf('if ($hash -ne $expected)')
+    const runAt = b.indexOf('[ScriptBlock]::Create($text)')
+    assert.ok(hashAt > 0 && runAt > hashAt, 'hash check comes first')
+    assert.ok(b.includes('[IO.FileMode]::CreateNew'), 'never overwrites a planted file')
+    assert.ok(b.includes('ReparsePoint'), 'refuses a linked result folder')
+    assert.doesNotMatch(b, /Invoke-Expression|\biex\b|-File\b/)
+  })
+  it('the launcher asks Windows (UAC) and carries the bootstrap encoded', () => {
+    const l = launcherScript(launch())
+    assert.match(l, /-Verb RunAs/)
+    assert.match(l, /NativeErrorCode -eq 1223/)
+    const encoded = /'-EncodedCommand', '([A-Za-z0-9+/=]+)'/.exec(l)?.[1] ?? ''
+    assert.equal(decode(encoded), bootstrapScript(launch()))
+    assert.equal(decode(encodeCommand('Ä€ x')), 'Ä€ x')
+  })
+  it('elevated.ps1 knows exactly these tasks and stays inside its limits', () => {
+    const text = ps('actions/elevated.ps1')
+    const known = /\$known = @\(([^)]*)\)/.exec(text)?.[1] ?? ''
+    assert.deepEqual(
+      known.split(',').map(s => s.trim().replaceAll("'", '')),
+      [...ELEVATED_TASK_IDS],
+    )
+    assert.ok(text.indexOf('IsInRole') < text.indexOf('$known'), 'checks it is elevated first')
+    const code = text
+      .split('\n')
+      .filter(l => !l.trim().startsWith('#'))
+      .join('\n')
+    assert.doesNotMatch(
+      code,
+      /Remove-Item|Invoke-Expression|\biex\b|vssadmin|ResetBase|Windows\.old|Set-ItemProperty|New-ItemProperty|reg(\.exe)? add|DownloadString|WebClient|Invoke-WebRequest|\$env:/i,
+    )
+  })
+  it('estimates come from the scan, or say they are unknown', () => {
+    assert.equal(estimateBytes('delivery_optimization', windows()), null)
+    assert.equal(estimateBytes('windows_temp', null), null)
+    const w = windows()
+    const temp = w.items.find(i => i.id === 'windows_temp')
+    if (temp?.status === 'ok') assert.equal(estimateBytes('windows_temp', w), temp.bytes)
+    assert.match(elevatedSummary(['windows_temp', 'delivery_optimization'], w), /Windows will ask you once more/)
+    assert.match(elevatedSummary(['delivery_optimization'], w), /size known after/)
+  })
+  it('a proposal can be administrator tasks alone, and the question says so', () => {
+    const fs = findingsForPlan()
+    const picked = selectForProposal(fs, { elevatedTasks: ['memory_dumps'] })
+    assert.deepEqual(picked, { status: 'ok', ids: [], skipped: [], elevated: ['memory_dumps'] })
+    assert.equal(selectForProposal(fs, { elevatedTasks: ['format_c'] }).status, 'refused')
+    const q = proposalQuestion({
+      findings: fs,
+      ids: [],
+      summary: '',
+      isCleanupOn: true,
+      elevatedLine: elevatedSummary(['memory_dumps'], windows()),
+    })
+    assert.match(q, /^Claude proposes Windows cleanup only\. Needs administrator/)
   })
 })

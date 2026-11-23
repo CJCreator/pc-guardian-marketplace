@@ -7,10 +7,12 @@ import { buildReports, finalReport } from './core/reports.ts'
 import { normalizeScriptText, SCRIPTS, sha256Hex } from './core/scripts.ts'
 import type { CategoryId, FindingClass } from './core/types.ts'
 import { SCRIPT_HASHES } from './script-hashes.ts'
+import { ELEVATED_SCRIPT } from './safe-shell.ts'
 import { dataFolder, writeDataFile } from './safe-writer.ts'
 import { proposeCleanup, readManifest, readRunIndex, restoreRun } from './cleanup.ts'
 import { ensureDuplicatesOn } from './consent.ts'
 import { MAX_PROPOSAL_ITEMS, type ProposalInput } from './core/propose.ts'
+import { ELEVATED_TASK_IDS, ELEVATED_TASKS, estimateBytes } from './core/elevated.ts'
 import { loadSettings } from './settings-store.ts'
 import { readLatestVerification, verifyCleanup } from './verify.ts'
 import { isScanRunning, loadLatestScan, PANE_ID, setLastAuditFolder, startScan, type LoadedScan } from './scan.ts'
@@ -138,7 +140,7 @@ export const TOOL_SPECS: Record<ToolName, { description: string; inputSchema: Re
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
   propose_cleanup: {
-    description: `Proposes a cleanup of findings from the latest deep scan and asks the person ONCE, in Claude Code's own dialog, showing the real totals and largest items: Clean (or Turn on and clean, when cleanup is off), Show the list (selects the items in the pane's Review for the person to change), or Cancel. Nothing changes unless they answer Clean. Name findingIds from get_findings, or categories and/or classes (safe, review) to take every matching item, largest first; maxBytes caps the total. Protected items, a duplicate group's copy to keep and anything Drive Cleanup does not clean are refused. Class A (safe) items are deleted; class B (review) items are moved to a restorable quarantine. At most ${String(MAX_PROPOSAL_ITEMS)} items. Report the result exactly as returned; if the person declines, do not propose again unless they ask.`,
+    description: `Proposes a cleanup of findings from the latest deep scan and asks the person ONCE, in Claude Code's own dialog, showing the real totals and largest items: Clean (or Turn on and clean, when cleanup is off), Show the list (selects the items in the pane's Review for the person to change), or Cancel. Nothing changes unless they answer Clean. Name findingIds from get_findings, or categories and/or classes (safe, review) to take every matching item, largest first; maxBytes caps the total. Protected items, a duplicate group's copy to keep and anything Drive Cleanup does not clean are refused. Class A (safe) items are deleted; class B (review) items are moved to a restorable quarantine. At most ${String(MAX_PROPOSAL_ITEMS)} items. elevatedTasks adds Windows cleanup that needs administrator rights (see get_windows_recommendations for each task's size, effect and undo): after the person answers Clean, Windows asks them again (UAC); if they decline there, those tasks are skipped and the rest still runs. Report the result exactly as returned; if the person declines, do not propose again unless they ask.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -146,6 +148,7 @@ export const TOOL_SPECS: Record<ToolName, { description: string; inputSchema: Re
         categories: { type: 'array', items: { type: 'string', enum: CATEGORIES } },
         classes: { type: 'array', items: { type: 'string', enum: ['safe', 'review'] } },
         maxBytes: { type: 'number', minimum: 1 },
+        elevatedTasks: { type: 'array', items: { type: 'string', enum: ELEVATED_TASK_IDS } },
       },
       additionalProperties: false,
     },
@@ -210,7 +213,7 @@ async function selfCheck($: EngineInterface): Promise<Answer> {
   const folder = await dataFolder($)
   lines.push(folder.status === 'ok' ? `Data folder: ${folder.path}` : `Data folder: unavailable (${folder.detail})`)
   const scripts: { file: string; status: string }[] = []
-  for (const spec of Object.values(SCRIPTS)) {
+  for (const spec of [...Object.values(SCRIPTS), { file: ELEVATED_SCRIPT }]) {
     const path = `${$.plugin.root}\\ps\\${spec.file.replaceAll('/', '\\')}`
     let status = 'ok'
     try {
@@ -374,11 +377,22 @@ async function recommendations($: EngineInterface): Promise<Answer> {
   const scan = await loadLatestScan($)
   if (scan === undefined) return NO_SCAN
   const recs = scan.recommendations
+  const adminTasks = ELEVATED_TASK_IDS.map(id => {
+    const bytes = estimateBytes(id, scan.windows)
+    const spec = ELEVATED_TASKS[id]
+    return {
+      task: id,
+      label: spec.label,
+      size: bytes === null ? 'unknown until run' : sizeText(bytes),
+      bytes,
+      what: spec.what,
+      undo: spec.undo,
+      isSetting: spec.isSetting,
+    }
+  })
   return answer(
-    recs.length === 0
-      ? 'No Windows storage recommendations from the latest scan.'
-      : `${String(recs.length)} Windows recommendations. Each is a manual step for the person; Drive Cleanup runs none of them.`,
-    recs,
+    `${recs.length === 0 ? 'No Windows storage recommendations from the latest scan.' : `${String(recs.length)} Windows recommendations.`} Drive Cleanup can do the administrator tasks listed under adminTasks through propose_cleanup (elevatedTasks): the person answers Clean, then Windows asks for administrator permission. Windows.old, restore points and turning hibernation fully off stay manual steps for the person.`,
+    { recommendations: recs, adminTasks },
   )
 }
 
@@ -562,6 +576,7 @@ async function propose($: EngineInterface, call: Readonly<Record<string, unknown
     categories: stringList(call, 'categories', CATEGORIES) as CategoryId[] | undefined,
     classes: stringList(call, 'classes', ['safe', 'review']) as ('safe' | 'review')[] | undefined,
     maxBytes,
+    elevatedTasks: stringList(call, 'elevatedTasks', ELEVATED_TASK_IDS),
   }
   const outcome = await proposeCleanup($, input)
   if (outcome.status !== 'done') return { result: outcome.message }

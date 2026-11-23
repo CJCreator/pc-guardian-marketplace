@@ -17,13 +17,14 @@ The person wants space back with as little effort as possible. Do the work; ask 
    - Add **class B (review)** findings only where the evidence is strong and the person's request allows it: old installers, archives already extracted beside them, duplicate copies (never the copy marked to keep), build caches of projects not touched for months. Name them by `findingIds`.
    - Leave out large old personal files, documents, media and anything whose reason you would not defend to the person. Age, size or name alone never make a file unnecessary.
    - If the person gave a target ("20 GB"), use `maxBytes` and stop once it is met.
+   - **Administrator tasks** (`elevatedTasks`), from `get_windows_recommendations` → `adminTasks`: add `windows_temp`, `memory_dumps` and `windows_update_cache` when each is over about 500 MB, and `delivery_optimization`. Add `component_store` only when the person wants the most space or the target is not met (it takes 10-30 minutes). Add `hibernation_reduce` only if the person agrees to change a setting. Windows will ask the person for administrator permission after they answer Clean; say so before proposing.
 4. **Propose once.** Before calling, say in two or three lines what you are proposing and why, by category with sizes. Then call `propose_cleanup` once. It shows the person the real totals and the largest items and asks them; you do not ask in chat as well.
 5. **Report exactly what came back.**
-   - **Done:** what was deleted and quarantined, what was skipped and why. Then call `verify_cleanup` and give free space before and after.
+   - **Done:** what was deleted and quarantined, what each administrator task freed, what was skipped and why. If Windows' permission prompt was declined, say the administrator tasks were not done and the rest was. Then call `verify_cleanup` and give free space before and after.
    - **Show the list:** the items are selected in the pane's Review; tell the person to adjust and press Clean selected there.
    - **Declined:** say nothing was changed. Do not propose again unless they ask.
    - **Refused:** give the reason (for example, the scan is too old, or no drive has room for the quarantine) and the fix.
-6. **What Drive Cleanup does not clean.** In one short list: Windows-managed space from `get_windows_recommendations` (with the Settings path), manual developer caches (with the command for the person to run), and, if PC Guardian is installed, what `get_cleanup_preview` shows for the Recycle Bin and browser caches (cleaned from PC Guardian's dashboard).
+6. **What Drive Cleanup does not clean.** In one short list: what stays manual from `get_windows_recommendations` (Windows.old, restore points, with the Settings path), manual developer caches (with the command for the person to run), and, if PC Guardian is installed, what `get_cleanup_preview` shows for the Recycle Bin and browser caches (cleaned from PC Guardian's dashboard).
 
 ## Rules
 

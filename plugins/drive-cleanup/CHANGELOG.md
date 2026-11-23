@@ -4,6 +4,20 @@ All notable changes to Drive Cleanup. The format follows [Keep a Changelog](http
 
 ## [Unreleased]
 
+## [1.2.0-beta.1] - 2026-11-23
+
+Administrator cleanup, asked twice. Not yet run on Windows: see TESTING.md §7.
+
+### Added
+
+- **`propose_cleanup` `elevatedTasks`**: six fixed administrator tasks: Windows Temp (older than 7 days), memory dumps, Windows Update download cache (skipped while updates install; the service restarts after), Delivery Optimization cache, DISM component cleanup (no /ResetBase), smaller hibernation file. The dialog lists them with estimated sizes; after Clean, Windows asks for permission (UAC). Declining UAC skips only those tasks.
+- `get_windows_recommendations` lists the administrator tasks with size, effect and undo.
+- Each administrator task is logged in the run record and `deletion_manifest.csv` (action `elevated`).
+
+### Security
+
+- The elevated process checks `ps/actions/elevated.ps1` against the fingerprint compiled into the plugin and runs the bytes it checked from memory; launcher and bootstrap are passed inline (`-EncodedCommand`), never from files; only task ids and Drive Cleanup's own paths reach them. PLAN.md §20, rule S3 reworded.
+
 ## [1.1.0-beta.1] - 2026-11-23
 
 One command to free space; Claude proposes, you answer once. Still not run on a Windows PC: see TESTING.md §4.

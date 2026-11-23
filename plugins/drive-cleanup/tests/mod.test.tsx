@@ -269,6 +269,9 @@ test('propose_cleanup with no scan, or naming what is not in it, refuses before 
     'not in the latest scan',
   )
   expect(textOf(await $.tool.call({ tool: 'mcp__drive-cleanup__propose_cleanup' }))).toContain('Name findingIds')
+  expect(
+    textOf(await $.tool.call({ tool: 'mcp__drive-cleanup__propose_cleanup', elevatedTasks: ['format_c'] })),
+  ).toContain('Invalid input')
   expect(textOf(await $.tool.call({ tool: 'mcp__drive-cleanup__propose_cleanup', classes: ['protected'] }))).toContain(
     'Invalid input',
   )
@@ -282,7 +285,13 @@ test('propose_cleanup with no one to answer changes nothing, then stops proposin
   mock.env(on, { APPDATA, USERPROFILE: 'C:\\Users\\Asha', SystemRoot: 'C:\\Windows' })
   seedScan(files)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-  const first = textOf(await $.tool.call({ tool: 'mcp__drive-cleanup__propose_cleanup', classes: ['safe'] }))
+  const first = textOf(
+    await $.tool.call({
+      tool: 'mcp__drive-cleanup__propose_cleanup',
+      classes: ['safe'],
+      elevatedTasks: ['memory_dumps', 'windows_update_cache'],
+    }),
+  )
   expect(first).toContain('did not approve')
   expect(first).toContain('Nothing was changed')
   expect(runs.length).toBe(0)

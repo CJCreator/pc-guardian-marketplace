@@ -17,7 +17,7 @@ Start a new session.
 
 | # | Do | Expect |
 | --- | --- | --- |
-| 0.1 | `/drive-cleanup:self-check` | Windows detected; data folder path; "all 11 match their fingerprints". |
+| 0.1 | `/drive-cleanup:self-check` | Windows detected; data folder path; "all 12 match their fingerprints". |
 | 0.2 | Ask Claude "open the Drive Cleanup pane" | Pane beside the chat with Overview / Review / Quarantine / Settings. |
 
 ## 1. Read-only scan (nothing may change)
@@ -114,6 +114,23 @@ Recreate the fixture folder (§2) and run a new deep scan first.
 | 6.6 | `/drive-cleanup:undo-cleanup` and answer **Restore** | Quarantined fixture files back in place; compare with `Get-FileHash`. |
 | 6.7 | `claude -p "free up space on my C drive with drive cleanup"` | Claude proposes; no one can answer, so nothing changes, and it says so. |
 | 6.8 | Type `/` in a new session | Only `drive-cleanup:free-space`, `drive-cleanup:undo-cleanup` and `pc-guardian:audit` from these plugins. "Explain my score", "find duplicates", "write the reports" still work by asking. |
+
+## 7. Administrator cleanup (1.2)
+
+Do this on a VM with a snapshot. Run `/drive-cleanup:free-space` first so there is a fresh scan.
+
+| # | Do | Expect |
+| --- | --- | --- |
+| 7.1 | Ask "clean Windows temp and memory dumps too" | The dialog lists files (if any) and "Needs administrator, so Windows will ask you once more: Windows Temp folder (about …); System memory dumps (…)". |
+| 7.2 | Answer Clean, then **No** at UAC | File part done; Claude reports "Windows did not get permission … Administrator tasks were not done." Nothing in `C:\Windows\Temp` changed. |
+| 7.3 | Again (after 5 min), Clean, then **Yes** at UAC | Old files in `C:\Windows\Temp` gone, newer and in-use ones kept; dumps gone; sizes reported; both tasks in `deletion_manifest.csv` with action `elevated`. |
+| 7.4 | Propose `windows_update_cache` while Windows Update is installing (TiWorker running) | Task skipped with "Windows is installing updates now"; `wuauserv` still running afterwards (`Get-Service wuauserv`). |
+| 7.5 | Propose `windows_update_cache` when idle | `SoftwareDistribution\Download` emptied; `wuauserv` running again if it was before. |
+| 7.6 | Propose `component_store` | Takes minutes; reports freed space; `Dism /Online /Cleanup-Image /AnalyzeComponentStore` afterwards shows no cleanup recommended. Installed updates can still be uninstalled. |
+| 7.7 | Propose `hibernation_reduce` | `powercfg /a` shows hibernation type reduced; Fast Startup still available; undo with `powercfg /hibernate /type full`. |
+| 7.8 | Tamper test: after the dialog's Clean and **before** answering UAC, edit one character of `ps\actions\elevated.ps1` in the plugin cache, then answer Yes | The elevated run refuses: "elevated.ps1 does not match its recorded fingerprint"; nothing deleted. Reinstall the plugin afterwards. |
+| 7.9 | As a standard user, answer UAC with an administrator's credentials | Works; the result is written to the standard user's `%APPDATA%\techgramam-drive-cleanup\elevated\`. |
+| 7.10 | `claude -p "clean memory dumps with drive cleanup"` | No dialog can be answered: nothing runs, no UAC prompt appears. |
 
 ## Clean up after testing
 

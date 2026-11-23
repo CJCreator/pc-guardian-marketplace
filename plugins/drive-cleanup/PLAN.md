@@ -43,9 +43,9 @@ These are never done, even if the person asks, because Windows has a supported w
 they risk the system:
 
 - deleting from `C:\Windows`, `Program Files`, `ProgramData` or other protected locations (§2.2);
-- registry cleaning, debloat scripts, disabling services, Defender, Windows Update or startup processes;
+- registry cleaning, debloat scripts, disabling services, Defender, Windows Update or startup processes (the Windows Update service is paused only while its download cache is cleared, then started again, §20);
 - uninstalling programs or developer tools;
-- `DISM` or `sfc` repairs, component-store cleanup, removing `Windows.old` (reported, with manual steps);
+- `DISM` or `sfc` repairs, `/ResetBase`, removing `Windows.old` or restore points (reported, with manual steps). Since 1.2, component-store cleanup (`/StartComponentCleanup`), the Windows Update and Delivery Optimization caches, Windows Temp and memory dumps are done on approval with administrator rights (§20);
 - emptying the Recycle Bin (PC Guardian's cleanup or Windows does that);
 - deleting anything because of its age, size or name alone.
 
@@ -89,7 +89,7 @@ Each rule has a test (§14) that names it.
 | --- | --- | --- |
 | S1 | **Scans only read.** Scan scripts open no file for writing, change no attribute or timestamp, and create nothing. | Script review checklist; a test greps scan scripts for write cmdlets/APIs; a Process Monitor capture in the release checklist. |
 | S2 | **No links are followed.** Junctions, symbolic links and mount points are counted as entries and never walked. Cloud placeholder files (`RECALL_ON_DATA_ACCESS`, `RECALL_ON_OPEN`, `OFFLINE`) are never opened, so OneDrive never downloads them. | Shared walker function in every script; fixture drive with links and placeholders. |
-| S3 | **Only allowlisted scripts run**, by id, after their SHA-256 matches the hash recorded at build time, as the current user, never elevated. No caller text reaches a command line. | `safe-shell.ts` (shared runtime). |
+| S3 | **Only allowlisted scripts run**, by id, after their SHA-256 matches the hash recorded at build time, as the current user. No caller text reaches a command line. **Administrator rights** only for the fixed tasks of §20, only after the person's yes and Windows' own UAC prompt, with the fingerprint checked again inside the elevated process and the checked text run from memory. *(Changed in 1.2; it was: never elevated.)* | `safe-shell.ts` (`runAllowlisted`, `runElevated`), `core/elevated.ts`. |
 | S4 | **Protected paths can never be acted on** (§2.2). The rule lives in core and is repeated as a refusal at the top of every action script. | Core classifier; each action script's guard; tests for every rule. |
 | S5 | **Only the person approves.** An action runs only after the person answers yes in Claude Code's own dialog: to Clean selected in the pane, or to a proposal Claude made with `propose_cleanup` (§19). Claude can propose and ask, never answer. Cleanup must be on (the proposal's dialog can turn it on, by the person's answer), the scan under 24 hours old, no scan running. A dismissed dialog, or a `-p` session with no one to ask, changes nothing. Purging a quarantine is the pane's alone. *(Changed in 1.1, §19; it was: never from a Claude tool.)* | `cleanup.ts` is the only module that calls `runAction`; both paths go through `planCleanup` and `act`; engine tests for no answer, cooldown and refusals. |
 | S6 | **Personal files are moved, not deleted.** Every class B item is quarantined and can be restored. Only class A items (re-creatable data) are deleted. | Action selection is a function of class, not a user choice; the review screen shows which action each item gets. |
@@ -849,3 +849,59 @@ Purge stays in the pane only. The scripts and their hashes do not change.
 | D | First-run consent folded into the proposal's dialog; duplicate search asked from the scan | after B | Built |
 | E | One plan with PC Guardian: `/free-space` lists what PC Guardian's cleanup can free (Recycle Bin, browser caches) | after B | Listed only; acting on it needs PC Guardian's source (its hooks are built from another repository) |
 | — | Optional "approve caches under N GB without asking" | — | **Not built on purpose**: it would break "nothing without a yes"; revisit after A |
+
+## 20. Administrator cleanup (1.2)
+
+### 20.1 Goal
+
+Claude can also clean the space only an administrator can reach, and the person still decides twice:
+once in Claude Code's dialog (what), once in Windows' UAC prompt (with what rights). Nothing elevated runs
+without both.
+
+### 20.2 Tasks (fixed; Claude picks ids, never paths or commands)
+
+| Task | Does | Size from the scan | Undo |
+| --- | --- | --- | --- |
+| `windows_temp` | Files in `C:\Windows\Temp` older than 7 days; in-use kept | `windows_temp` | Not needed |
+| `memory_dumps` | `MEMORY.DMP`, `Minidump\*.dmp`, `LiveKernelReports\**\*.dmp` | dumps | Cannot; diagnostics only |
+| `windows_update_cache` | Pauses `wuauserv`, clears `SoftwareDistribution\Download`, starts it again; skipped while `TiWorker` runs | `update_cache` | Not needed |
+| `delivery_optimization` | `Delete-DeliveryOptimizationCache -Force` | unknown until run | Not needed |
+| `component_store` | `DISM /Online /Cleanup-Image /StartComponentCleanup` (no `/ResetBase`) | unknown until run | Not needed |
+| `hibernation_reduce` | `powercfg /hibernate /type reduced` (a setting; Fast Startup kept) | about half of `hiberfil.sys` | `powercfg /hibernate /type full` |
+
+Still out: `Windows.old`, restore points, `/ResetBase`, turning hibernation fully off, anything in the
+registry, any user file (those go through §7 and quarantine).
+
+### 20.3 The chain
+
+1. `propose_cleanup { elevatedTasks }`: the dialog adds "Needs administrator, so Windows will ask you once
+   more: …" with each task's estimated size.
+2. Yes → `act` runs the file part first (if any), then `runElevated`.
+3. `runElevated` checks `elevated.ps1` against its compiled fingerprint, writes `elevated/<runId>.request.json`
+   (the safe writer creates the folder), and runs `powershell.exe -EncodedCommand <launcher>`.
+4. The launcher (as the user) runs `Start-Process powershell -Verb RunAs -EncodedCommand <bootstrap>`:
+   **Windows shows UAC**. Declined (error 1223) → `declined`, nothing elevated runs; the file part stands.
+5. The bootstrap (elevated) reads `elevated.ps1`, hashes it, compares with the literal it carries, and only
+   then runs **that text** with `[ScriptBlock]::Create`. It writes the result with `FileMode.CreateNew` after
+   refusing any linked folder on the result path.
+6. The mod reads and validates the result (`RawElevatedCheck`) and logs each task in the run record and the
+   manifest (category `windows_managed`, action `elevated`).
+
+### 20.4 Threats
+
+| Threat | Answer |
+| --- | --- |
+| User-level malware swaps `elevated.ps1` after the check, before UAC | The elevated process checks the bytes it read itself and runs those bytes from memory |
+| It swaps a launcher file | There is none: launcher and bootstrap are built in the module and passed as `-EncodedCommand` |
+| Claude passes a path or command | The input is an enum of task ids; `checkLaunch` refuses any path Drive Cleanup did not build (drive-rooted, no quotes, `$`, backtick, wildcards) |
+| A planted file or junction where the result is written | `CreateNew` fails on an existing file; any reparse point on the result path is refused |
+| UAC fatigue: a model asks for admin repeatedly | Admin runs only after the dialog's yes; the 5-minute decline cooldown applies to the whole proposal |
+| A standard user enters another account's admin credentials | Paths are passed in, not read from the elevated account's environment; it writes to the asking user's data folder |
+| Interrupting Windows Update | Skipped while `TiWorker` runs; the service is restarted in `finally` |
+| Constrained Language Mode / WDAC | The elevated run fails and says so; nothing partial is claimed |
+
+### 20.5 Status
+
+Built and unit-tested (launch checks, fingerprint-before-run order, encoding round-trip, static rules on
+`elevated.ps1`, estimates, the dialog line); engine-tested for refusals. **Never run on Windows**: UAC,
+DISM, the services and the bootstrap need TESTING.md §7 on a Windows VM before release.

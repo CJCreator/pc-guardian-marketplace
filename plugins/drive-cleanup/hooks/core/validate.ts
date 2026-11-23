@@ -21,6 +21,8 @@ import type {
   RawWindows,
   RawWindowsItem,
   WindowsItemId,
+  RawElevated,
+  RawElevatedLaunch,
 } from './types.ts'
 import { CANDIDATE_KINDS } from './types.ts'
 
@@ -321,4 +323,27 @@ export const RawCacheCleanCheck: Check<RawCacheClean> = either(
 export const RawPurgeCheck: Check<RawPurge> = either(
   obj({ status: oneOf(['ok'] as const), runId: str, removedCount: int, removedBytes: num, failedCount: int }),
   refused,
+)
+
+export const RawElevatedCheck: Check<RawElevated> = either(
+  obj({
+    status: oneOf(['ok'] as const),
+    tasks: list(
+      obj({
+        id: str,
+        status: oneOf(['done', 'skipped', 'failed', 'missing'] as const),
+        removedBytes: num,
+        removedCount: int,
+        skippedCount: int,
+        detail: str,
+      }),
+      10,
+    ),
+  }),
+  refused,
+)
+
+export const RawElevatedLaunchCheck: Check<RawElevatedLaunch> = either(
+  obj({ status: oneOf(['ran'] as const), exitCode: int }),
+  either(obj({ status: oneOf(['declined'] as const) }), obj({ status: oneOf(['failed'] as const) })),
 )

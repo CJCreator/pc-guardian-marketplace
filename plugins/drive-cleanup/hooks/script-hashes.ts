@@ -4,6 +4,7 @@
 export const SCRIPT_HASHES: Readonly<Record<string, string>> = {
   'actions/apply.ps1': '75611d2f0f357558f17a8c7e0f3eec80f53baa7d9eca39e5f9a5f5923f28e204',
   'actions/clean-cache.ps1': '3500852fb01511145cd7422f600b272d12cbb379f19b354167b6df9024fef1f9',
+  'actions/elevated.ps1': 'ee6ccd60863fb641e2b2a257bd12596e9e2bcef82f7549ea4df921ec3ec91082',
   'actions/purge.ps1': 'fd7e8aca6a1367ec5c8e09f345ab6690d5fb9f31d2b513ae2516821cba2fe3ee',
   'actions/restore.ps1': 'c6f22065bb2e9566fdce49a38ed7475d6fad4d363eb79efa976ee6f47ded205b',
   'scan/dev-caches.ps1': '77b71a516175d95e3a319f77300e346a9eb7ec8b1dc374cc04705b063d8c9323',

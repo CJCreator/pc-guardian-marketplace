@@ -6,6 +6,7 @@
 
 import { CATEGORY_LABEL } from './classify.ts'
 import { sizeText } from './format.ts'
+import { checkTasks, type ElevatedTaskId } from './elevated.ts'
 import type { CategoryId, Finding, FindingClass } from './types.ts'
 
 /** The most items one proposal may hold. */
@@ -19,9 +20,13 @@ export type ProposalInput = {
   classes?: readonly Exclude<FindingClass, 'protected'>[]
   /** Stop adding items, largest first, once this many bytes are chosen. */
   maxBytes?: number
+  /** Administrator tasks (core/elevated.ts), by id. */
+  elevatedTasks?: readonly string[]
 }
 
-export type Selection = { status: 'ok'; ids: string[]; skipped: string[] } | { status: 'refused'; message: string }
+export type Selection =
+  | { status: 'ok'; ids: string[]; skipped: string[]; elevated: ElevatedTaskId[] }
+  | { status: 'refused'; message: string }
 
 /** What Drive Cleanup can act on at all; the planner checks again. */
 export const isActionable = (f: Finding): boolean =>
@@ -41,8 +46,15 @@ export function selectForProposal(findings: readonly Finding[], input: ProposalI
   const hasFilter =
     (input.categories !== undefined && input.categories.length > 0) ||
     (input.classes !== undefined && input.classes.length > 0)
-  if (!hasIds && !hasFilter) return { status: 'refused', message: 'Name findingIds, or categories and/or classes.' }
+  const elevatedIn = input.elevatedTasks ?? []
+  const checkedTasks = checkTasks(elevatedIn)
+  if (checkedTasks.status !== 'ok') return checkedTasks
+  const elevated = checkedTasks.tasks
   if (hasIds && hasFilter) return { status: 'refused', message: 'Name findingIds, or categories/classes, not both.' }
+  if (!hasIds && !hasFilter) {
+    if (elevated.length > 0) return { status: 'ok', ids: [], skipped: [], elevated }
+    return { status: 'refused', message: 'Name findingIds, or categories and/or classes, and/or elevatedTasks.' }
+  }
 
   const byId = new Map(findings.map(f => [f.id, f]))
   let chosen: Finding[]
@@ -89,8 +101,9 @@ export function selectForProposal(findings: readonly Finding[], input: ProposalI
     skipped.push(...chosen.slice(MAX_PROPOSAL_ITEMS).map(f => f.id))
     chosen = chosen.slice(0, MAX_PROPOSAL_ITEMS)
   }
-  if (chosen.length === 0) return { status: 'refused', message: 'Nothing in the latest scan matches that proposal.' }
-  return { status: 'ok', ids: chosen.map(f => f.id), skipped }
+  if (chosen.length === 0 && elevated.length === 0)
+    return { status: 'refused', message: 'Nothing in the latest scan matches that proposal.' }
+  return { status: 'ok', ids: chosen.map(f => f.id), skipped, elevated }
 }
 
 const short = (path: string, max = 70): string => (path.length <= max ? path : `…${path.slice(-(max - 1))}`)
@@ -105,6 +118,8 @@ export function proposalQuestion(opts: {
   ids: readonly string[]
   summary: string
   isCleanupOn: boolean
+  /** The administrator line from core/elevated.ts, or ''. */
+  elevatedLine?: string
 }): string {
   const byId = new Map(opts.findings.map(f => [f.id, f]))
   const items = opts.ids.map(id => byId.get(id)).filter((f): f is Finding => f !== undefined)
@@ -113,7 +128,12 @@ export function proposalQuestion(opts: {
     .slice(0, 3)
     .map(f => `${short(f.path)} (${sizeText(f.bytes)}, ${CATEGORY_LABEL[f.category]})`)
   const head = opts.isCleanupOn ? '' : 'Cleanup is off; answering Turn on and clean also turns it on. '
-  return `${head}Claude proposes cleaning ${String(items.length)} items. ${opts.summary} Largest: ${largest.join('; ')}. Quarantined items can be restored; deleted caches and temporary files cannot. Clean them?`
+  const files =
+    items.length > 0
+      ? `Claude proposes cleaning ${String(items.length)} items. ${opts.summary} Largest: ${largest.join('; ')}. Quarantined items can be restored; deleted caches and temporary files cannot.`
+      : 'Claude proposes Windows cleanup only.'
+  const admin = opts.elevatedLine === undefined || opts.elevatedLine === '' ? '' : ` ${opts.elevatedLine}`
+  return `${head}${files}${admin} Clean them?`
 }
 
 export const ANSWERS = {

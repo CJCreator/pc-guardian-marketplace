@@ -1,6 +1,6 @@
 # Drive Cleanup
 
-> **Beta (1.1.0-beta.1): not yet run on a Windows PC.** Every milestone in [PLAN.md](PLAN.md) is built
+> **Beta (1.2.0-beta.1): not yet run on a Windows PC.** Every milestone in [PLAN.md](PLAN.md) is built
 > and unit-tested, but the PowerShell scripts have not run on Windows yet. Follow
 > [TESTING.md](TESTING.md) on a test PC or with a backup before using it on files you care about.
 
@@ -15,9 +15,11 @@ Cleanup finds where the space went and what can be recovered safely, and you app
   approval); pnpm, Gradle, Maven, Docker (manual steps); Next.js, Vite, Turbo and Parcel caches inside
   projects.
 - **Leftovers** of uninstalled programs, empty folders, and large files untouched for a year.
-- **Windows recommendations**: Storage Sense, Windows Update files, Windows.old, memory dumps, the
-  hibernation file, restore points, low space, disk health. Manual steps only: Drive Cleanup never
-  changes Windows settings.
+- **Windows space that needs administrator rights**, on your approval and Windows' own permission
+  prompt: the Windows Temp folder, memory dumps, the Windows Update and Delivery Optimization caches,
+  superseded Windows components (DISM component cleanup), and a smaller hibernation file.
+- **Windows recommendations** for the rest (Storage Sense, Windows.old, restore points, low space, disk
+  health): manual steps only.
 
 ## How it keeps your data safe
 
@@ -31,6 +33,10 @@ Cleanup finds where the space went and what can be recovered safely, and you app
   cleanup starts only when you answer **Clean** in Claude Code's own dialog, which shows the real totals
   and the largest items. Cancel, closing the dialog, or a session with no one to ask (`claude -p`)
   changes nothing. Prefer to pick each item? Do it in the pane's Review instead.
+- **Administrator tasks ask twice.** Windows' own permission prompt (UAC) comes after your Clean; say No
+  there and only the administrator part is skipped. Claude picks from six fixed tasks, never a path or a
+  command, and the elevated script is checked against its fingerprint inside the elevated process before
+  it runs.
 - **Your files are moved, not deleted.** Installers, archives, downloads, duplicates, leftovers and the
   rest of class B go to `Drive Cleanup Quarantine` on another drive when there is room, and can be
   restored. Only re-creatable data (class A) is deleted. Quarantine is never deleted until you say so.
