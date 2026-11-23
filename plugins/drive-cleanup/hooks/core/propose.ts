@@ -76,9 +76,12 @@ export function selectForProposal(findings: readonly Finding[], input: ProposalI
       chosen.push(f)
     }
   } else {
+    // The Recycle Bin holds the person's own deleted files: only when named by category or id.
+    const namesBin = input.categories?.includes('recycle_bin') === true
     chosen = findings.filter(
       f =>
         isActionable(f) &&
+        (f.category !== 'recycle_bin' || namesBin) &&
         (input.categories === undefined || input.categories.length === 0 || input.categories.includes(f.category)) &&
         (input.classes === undefined ||
           input.classes.length === 0 ||
@@ -147,11 +150,14 @@ export function proposalQuestion(opts: {
   const p = opts.plan
   const total = freedEstimate(p, opts.elevatedBytes ?? 0)
   const lines: string[] = [total > 0 ? `Free up about ${sizeText(total)} on ${p.systemDrive}?` : 'Run this cleanup?']
-  if (p.deleteBytes > 0) {
+  const binBytes = items.filter(f => f.category === 'recycle_bin').reduce((sum, f) => sum + f.bytes, 0)
+  const cacheBytes = Math.max(0, p.deleteBytes - binBytes)
+  if (cacheBytes > 0) {
     lines.push(
-      `• Delete ${sizeText(p.deleteBytes)} of caches and temporary files. Apps rebuild these; this cannot be undone.`,
+      `• Delete ${sizeText(cacheBytes)} of caches and temporary files. Apps rebuild these; this cannot be undone.`,
     )
   }
+  if (binBytes > 0) lines.push(`• Empty the Recycle Bin (${sizeText(binBytes)}). Those files are gone for good.`)
   if (p.quarantineBytes > 0) {
     const kinds = [...new Set(items.filter(f => f.action === 'quarantine').map(f => lower(CATEGORY_LABEL[f.category])))]
     const onSystem = p.quarantineRoot.toUpperCase().startsWith(p.systemDrive.toUpperCase())

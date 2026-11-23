@@ -46,7 +46,7 @@ they risk the system:
 - registry cleaning, debloat scripts, disabling services, Defender, Windows Update or startup processes (the Windows Update service is paused only while its download cache is cleared, then started again, §20);
 - uninstalling programs or developer tools;
 - `DISM` or `sfc` repairs, `/ResetBase`, removing `Windows.old` or restore points (reported, with manual steps). Since 1.2, component-store cleanup (`/StartComponentCleanup`), the Windows Update and Delivery Optimization caches, Windows Temp and memory dumps are done on approval with administrator rights (§20);
-- emptying the Recycle Bin (PC Guardian's cleanup or Windows does that);
+- emptying the Recycle Bin by itself, or on any drive but the system drive (since 1.4 it is emptied on approval, only by name, §19.7);
 - deleting anything because of its age, size or name alone.
 
 ---
@@ -848,7 +848,7 @@ Purge stays in the pane only. The scripts and their hashes do not change.
 | C | Three visible commands; skills rewritten; READMEs | A, B | Built |
 | D | First-run consent folded into the proposal's dialog; duplicate search asked from the scan | after B | Built |
 | E | One plan with PC Guardian: `/free-space` also cleans the Recycle Bin and browser caches | after B | **Built (PC Guardian 2.1.0)**: PC Guardian's own `propose_cleanup`, one plain question, through its existing `runCleanup`; no change to its bundled `deps.js` or scripts. At most two questions in `/free-space`, see §19.7 |
-| F | Merge the two plugins (§19.7) | after A | Recommended next |
+| F | One question: Drive Cleanup cleans Temp, browser caches and the Recycle Bin itself (§19.7) | after B | **Built (1.4)** |
 | — | Optional "approve caches under N GB without asking" | — | **Not built on purpose**: it would break "nothing without a yes"; revisit after A |
 
 ### 19.7 Why two questions, and how to get to one
@@ -859,9 +859,13 @@ Cleanup passed. So `/drive-cleanup:free-space` asks at most twice: Drive Cleanup
 caches, Windows), then PC Guardian's (Recycle Bin, browser caches), only when that is worth it (about
 500 MB).
 
-**One question needs one plugin.** Recommended after the Windows test (A): fold PC Guardian's cleanup kinds
-(Recycle Bin, browser caches, startup) into Drive Cleanup's planner as findings, keep PC Guardian for the
-health audit, and share the runtime as D1 planned. Then `propose_cleanup` covers everything in one dialog.
+**Done in 1.4: one question.** Drive Cleanup cleans the space kinds itself, through `clean-cache.ps1`
+(fixed folders, by id): the user Temp folder (7-day rule), each browser's cache folders (only while it is
+closed; §2.2 now excepts exactly those folders inside a browser profile), and this user's Recycle Bin on
+the system drive (only items whose `$I` record predates the approval; chosen only by name, never by
+"all safe items"). `/free-space` no longer asks PC Guardian. PC Guardian keeps startup apps (speed) and
+its own cleanup for people without Drive Cleanup; merging the two plugins fully (one install) is still
+open and needs the shared runtime (D1).
 
 ## 20. Administrator cleanup (1.2)
 

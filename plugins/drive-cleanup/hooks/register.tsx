@@ -74,12 +74,15 @@ async function toggleDuplicates($: EngineInterface): Promise<void> {
   }
 }
 
-/** One press: every safe item (caches, temporary files) selected, then the usual confirmation. */
+/** One press: every cache and temporary file selected (not the Recycle Bin), then the usual confirmation. */
 async function cleanSafeItems($: EngineInterface): Promise<void> {
   const scan = await loadLatestScan($)
   if (scan === undefined) return
   if (!(await ensureCleanupOn($))) return
-  const ids = scan.classified.findings.filter(f => f.class === 'safe' && isActionable(f)).map(f => f.id)
+  // Never the Recycle Bin: those are the person's own files, emptied only when they pick it.
+  const ids = scan.classified.findings
+    .filter(f => f.class === 'safe' && f.category !== 'recycle_bin' && isActionable(f))
+    .map(f => f.id)
   await setSelection($, () => ({ scanId: scan.meta.scanId, ids }))
   await cleanSelected($)
 }

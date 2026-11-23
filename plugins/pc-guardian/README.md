@@ -33,7 +33,7 @@ Answer `y` to add the marketplace and choose the user scope. Then start a new se
 | -------------------- | -------------------------------------------------------------- |
 | `/pc-guardian:audit` | Audits this PC (about 40 seconds) and summarizes the results.  |
 
-Everything else, just ask: "why is my PC slow?", "what starts with Windows?", "explain my score", "what changed since last time?", "what should I fix first?", "save a report", "open the dashboard", "what could cleanup free?". Claude uses PC Guardian's skills and tools to answer from real measurements, without a command for each. To free disk space, Drive Cleanup's `/drive-cleanup:free-space` also lists what PC Guardian's cleanup can free. The `pc-guardian:pc-auditor` agent can run an audit on its own with only those read-only tools.
+Everything else, just ask: "why is my PC slow?", "what starts with Windows?", "explain my score", "what changed since last time?", "what should I fix first?", "save a report", "open the dashboard", "what could cleanup free?". Claude uses PC Guardian's skills and tools to answer from real measurements, without a command for each. To free disk space, Drive Cleanup's `/drive-cleanup:free-space` cleans Temp files, browser caches and the Recycle Bin itself, in one question. The `pc-guardian:pc-auditor` agent can run an audit on its own with only those read-only tools.
 
 ## Cleanup (only on your yes)
 

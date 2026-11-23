@@ -7,7 +7,7 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
 import { classifyCandidate, classifyScan } from '../../hooks/core/classify.ts'
-import { DEV_CACHES, SAFE_CACHE_IDS } from '../../hooks/core/devcaches.ts'
+import { BROWSER_CACHES, CLEANABLE_CACHE_IDS, DEV_CACHES, SAFE_CACHE_IDS } from '../../hooks/core/devcaches.ts'
 import { chooseKeeper, duplicateFindings, mergeHash } from '../../hooks/core/duplicates.ts'
 import { protectedBy } from '../../hooks/core/paths.ts'
 import { chooseQuarantineRoot, planCleanup, type PlanInput } from '../../hooks/core/plan.ts'
@@ -161,7 +161,12 @@ describe('developer caches (M2)', () => {
     const cleanIds = [...ps('actions/clean-cache.ps1').matchAll(/^\s{4}([a-z_]+)\s+= @\{ roots/gm)]
       .map(m => m[1])
       .toSorted()
-    assert.deepEqual(cleanIds, [...SAFE_CACHE_IDS].toSorted(), 'clean-cache.ps1 knows exactly the class A caches')
+    assert.deepEqual(
+      cleanIds,
+      [...CLEANABLE_CACHE_IDS].toSorted(),
+      'clean-cache.ps1 knows exactly the class A caches, Temp and the Recycle Bin',
+    )
+    assert.ok(SAFE_CACHE_IDS.every(id => CLEANABLE_CACHE_IDS.includes(id)))
   })
   it('class A caches can be cleaned, class B are manual, absent ones are not listed', () => {
     const scan = classifyScan({ walk: null, windows: null, devcaches: devcaches() }, ctx())
@@ -176,6 +181,106 @@ describe('developer caches (M2)', () => {
     const code = scan.findings.find(f => f.cacheId === 'vscode_cache')
     assert.match(code?.reason ?? '', /running now/)
     assert.equal(code?.protectedBy, null, "VS Code's cache folders are not protected")
+  })
+  it('browser profiles stay protected except their cache folders', () => {
+    const c = ctx()
+    const edge = `${PROFILE}\\AppData\\Local\\Microsoft\\Edge\\User Data`
+    for (const cache of [
+      `${edge}\\Default\\Cache\\Cache_Data`,
+      `${edge}\\Profile 2\\Code Cache`,
+      `${edge}\\Default\\GPUCache\\data_0`,
+      `${PROFILE}\\AppData\\Local\\Mozilla\\Firefox\\Profiles\\ab12.default\\cache2`,
+    ])
+      assert.equal(protectedBy(cache, c, true), null, cache)
+    for (const kept of [
+      edge,
+      `${edge}\\Default`,
+      `${edge}\\Default\\History`,
+      `${edge}\\Default\\Login Data`,
+      `${edge}\\Default\\Cache`,
+      `${edge}\\Default\\Network\\Cookies`,
+      `${edge}\\System Profile\\Cache\\Cache_Data`,
+      `${PROFILE}\\AppData\\Roaming\\Mozilla\\Firefox\\Profiles\\ab12.default\\places.sqlite`,
+    ])
+      assert.equal(protectedBy(kept, c, false), 'Browser profile', kept)
+  })
+  it('browser caches are their own category, cleaned while the browser is closed', () => {
+    assert.deepEqual(
+      BROWSER_CACHES.map(b => b.id),
+      ['edge_cache', 'chrome_cache', 'brave_cache', 'firefox_cache'],
+    )
+    const scanText = ps('scan/dev-caches.ps1')
+    const cleanText = ps('actions/clean-cache.ps1')
+    for (const [id, owner] of [
+      ['edge_cache', 'msedge'],
+      ['chrome_cache', 'chrome'],
+      ['brave_cache', 'brave'],
+      ['firefox_cache', 'firefox'],
+    ]) {
+      assert.match(scanText, new RegExp(`id = '${id}'.*owners = @\\('${owner}'\\)`), id)
+      assert.match(cleanText, new RegExp(`${id}\\s+= @\\{.*owners = @\\('${owner}'\\)`), id)
+    }
+    for (const text of [scanText, cleanText]) {
+      assert.match(text, /'Cache\\Cache_Data', 'Code Cache', 'GPUCache'/)
+      assert.match(text, /'cache2'/)
+    }
+    const raw = {
+      caches: [
+        {
+          id: 'chrome_cache',
+          isPresent: true,
+          bytes: 900 * 1024 ** 2,
+          fileCount: 4000,
+          lastWriteUtc: new Date(NOW).toISOString(),
+          isRunning: false,
+          isTruncated: false,
+          roots: [
+            {
+              path: `${PROFILE}\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Cache\\Cache_Data`,
+              status: 'ok' as const,
+              bytes: 900 * 1024 ** 2,
+              fileCount: 4000,
+            },
+            {
+              path: `${PROFILE}\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Code Cache`,
+              status: 'missing' as const,
+              bytes: 0,
+              fileCount: 0,
+            },
+          ],
+        },
+      ],
+    }
+    const f = classifyScan({ walk: null, windows: null, devcaches: raw }, ctx()).findings[0]
+    assert.deepEqual(
+      [f?.category, f?.class, f?.action, f?.cacheId],
+      ['browser_cache', 'safe', 'delete', 'chrome_cache'],
+    )
+    assert.equal(protectedBy(f?.path ?? '', ctx(), true), null, 'its path is a cache folder, not the profile')
+  })
+  it('the Recycle Bin is only ever chosen by name, and the question says it is for good', () => {
+    const win = classifyScan({ walk: null, windows: windows() }, ctx()).findings
+    const bin = win.find(f => f.category === 'recycle_bin') as Finding
+    const bySafe = selectForProposal(win, { classes: ['safe'] })
+    assert.ok(bySafe.status === 'refused' || !bySafe.ids.includes(bin.id), 'classes: safe never takes the Recycle Bin')
+    const named = selectForProposal(win, { categories: ['recycle_bin'] }) as { ids: string[] }
+    assert.deepEqual(named.ids, [bin.id])
+    const q = proposalQuestion({
+      findings: win,
+      ids: named.ids,
+      plan: { deleteBytes: bin.bytes, quarantineBytes: 0, quarantineRoot: '', systemDrive: 'C:' },
+      isCleanupOn: true,
+    })
+    assert.match(q, /Empty the Recycle Bin \(.+\)\. Those files are gone for good\./)
+    assert.doesNotMatch(q, /caches and temporary files/, 'not described as caches')
+  })
+  it('the Recycle Bin is emptied only for items deleted before the approval, and Temp keeps its 7 days', () => {
+    const text = ps('actions/clean-cache.ps1')
+    assert.match(text, /GetFiles\('\$I\*'\)/)
+    assert.match(text, /\$record\.LastWriteTimeUtc -gt \$approvedAt/)
+    assert.doesNotMatch(text.replaceAll(/#.*$/gm, ''), /Clear-RecycleBin/, 'never empties every drive at once')
+    assert.match(text, /user_temp\s+= @\{.*olderThanDays = 7/)
+    assert.match(text, /LastWriteTimeUtc -gt \$cutoff/)
   })
   it('editor settings stay protected while its caches are not', () => {
     assert.notEqual(protectedBy(`${PROFILE}\\AppData\\Roaming\\Code\\User\\settings.json`, ctx()), null)

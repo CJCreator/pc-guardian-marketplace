@@ -141,18 +141,19 @@ Do this on a VM with a snapshot. Run `/drive-cleanup:free-space` first so there 
 | 8.3 | After a cleanup that quarantined files | The message ends "Changed your mind? /drive-cleanup:undo-cleanup, or the Undo tab in the pane, puts files back." |
 | 8.4 | `/drive-cleanup:free-space` end to end | Claude's plan and result follow the skill's templates: sizes in GB, no class A/B, no paths except the three biggest, free space before and after. |
 
-## 9. With PC Guardian (PC Guardian 2.1.0)
+## 9. Temp, browser caches and the Recycle Bin (1.4)
 
-Put a few files in the Recycle Bin and close your browsers first.
+Put a few files in the Recycle Bin, then wait a minute. Leave Edge open, close Chrome.
 
 | # | Do | Expect |
 | --- | --- | --- |
-| 9.1 | `/drive-cleanup:free-space` | Claude's plan mentions the Recycle Bin and browser caches ("PC Guardian asks separately"). After Drive Cleanup's question, a second short one: "Free up about … ? • Empty the Recycle Bin (…, N items). Those files are gone for good. • Clear … of browser caches (…)". **Free … / Not now**. |
-| 9.2 | Answer **Not now** to PC Guardian's question | Nothing in the Recycle Bin changes; Drive Cleanup's part stands. |
-| 9.3 | Ask "empty my recycle bin" | One question; on **Free …** the Recycle Bin is empty and the run shows on the PC Guardian dashboard's Clean up page. |
-| 9.4 | With a browser open, ask to clear browser caches | That browser is reported as not cleanable now (open), the others are cleaned. |
-| 9.5 | Ask "stop apps starting with Windows" | Only PC Guardian's suggested startup apps are listed; after yes they are off; the dashboard's **Turn back on** restores one. |
-| 9.6 | `claude -p "empty my recycle bin with pc guardian"` | Nothing changes; no question can be answered. |
+| 9.1 | Run a deep scan, then open Choose items | Categories **Temp files**, **Browser caches** (one row per browser), **Recycle Bin**. |
+| 9.2 | Overview > **Clean safe items** | The question lists caches and temporary files, **not** the Recycle Bin. After yes: Chrome's cache folders emptied; Edge skipped ("Close msedge first"); Temp files older than 7 days gone, newer ones kept (compare a fresh file's presence). |
+| 9.3 | Check Chrome afterwards | History, bookmarks, saved passwords and signed-in sites are all still there. |
+| 9.4 | `/drive-cleanup:free-space` with a Recycle Bin over 500 MB | **One** question, with its own line: "Empty the Recycle Bin (…). Those files are gone for good." No second question from PC Guardian. |
+| 9.5 | Before answering 9.4, delete one more file to the Recycle Bin, then answer yes | That newest file is still in the Recycle Bin afterwards; the older ones are gone. Explorer shows no broken entries. |
+| 9.6 | Ask "clean my caches" with "keep my Recycle Bin" | The Recycle Bin is not in the question. |
+| 9.7 | `claude -p "free up space with drive cleanup"` | Nothing changes. |
 
 ## Clean up after testing
 

@@ -4,6 +4,21 @@ All notable changes to Drive Cleanup. The format follows [Keep a Changelog](http
 
 ## [Unreleased]
 
+## [1.4.0-beta.1] - 2026-11-23
+
+One question for everything. Still not run on Windows: see TESTING.md §6–§9.
+
+### Added
+
+- **Your Temp files** (unchanged for 7 days) are cleaned by Drive Cleanup itself, file by file, with the 7-day rule enforced in `clean-cache.ps1`. They used to be left to PC Guardian or Windows.
+- **Browser caches** (Edge, Chrome, Brave, Firefox): only each profile's cache folders (Chromium: `Cache\Cache_Data`, `Code Cache`, `GPUCache`; Firefox: `cache2`), only while that browser is closed. The rest of a browser profile stays protected (§2.2 exception, tested).
+- **The Recycle Bin** on the system drive: emptied item by item, only items deleted before the approval (by their `$I` record). Never chosen by "all safe items" or the pane's one-press button, only by name; the dialog says "Those files are gone for good."
+
+### Changed
+
+- `/drive-cleanup:free-space` asks **one** question: PC Guardian's second question is gone. PC Guardian keeps startup apps (speed, not space) and its own cleanup for people without Drive Cleanup.
+- Emptied cache subfolders are removed only if they were older than the approval when read, so a folder an app just made stays.
+
 ## [1.3.0-beta.1] - 2026-11-23
 
 Easier to use. Still not run on Windows: see TESTING.md §6–§8.

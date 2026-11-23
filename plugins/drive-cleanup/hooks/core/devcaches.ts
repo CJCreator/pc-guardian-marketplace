@@ -13,7 +13,27 @@ export type DevCacheSpec = {
   how: string
   /** What the person loses or pays by cleaning it. */
   note: string
+  /** The finding's category when it is not a developer cache. */
+  category?: 'browser_cache'
 }
+
+const browser = (id: string, tool: string): DevCacheSpec => ({
+  id,
+  tool,
+  label: `${tool} cache`,
+  cls: 'safe',
+  how: `Drive Cleanup deletes only the cache folders of each ${tool} profile, while ${tool} is closed.`,
+  note: 'History, passwords, cookies and settings are untouched; sites load a little slower at first.',
+  category: 'browser_cache',
+})
+
+/** Browser caches, measured with the developer caches by ps/scan/dev-caches.ps1. */
+export const BROWSER_CACHES: readonly DevCacheSpec[] = [
+  browser('edge_cache', 'Edge'),
+  browser('chrome_cache', 'Chrome'),
+  browser('brave_cache', 'Brave'),
+  browser('firefox_cache', 'Firefox'),
+]
 
 export const DEV_CACHES: readonly DevCacheSpec[] = [
   {
@@ -152,8 +172,15 @@ export const DEV_CACHES: readonly DevCacheSpec[] = [
     how: 'Manual: docker system df, then docker builder prune and docker image prune; Docker Desktop > Troubleshoot > Clean / Purge data.',
     note: 'Drive Cleanup never runs Docker commands. The disk file does not shrink until Docker compacts it.',
   },
+  ...BROWSER_CACHES,
 ] as const
+
+/** Cleaned by clean-cache.ps1 but measured by other steps: the walk (Temp) and the Windows step (Recycle Bin). */
+export const OTHER_CLEANABLE_IDS = ['user_temp', 'recycle_bin'] as const
 
 export const devCache = (id: string): DevCacheSpec | undefined => DEV_CACHES.find(c => c.id === id)
 
 export const SAFE_CACHE_IDS = DEV_CACHES.filter(c => c.cls === 'safe').map(c => c.id)
+
+/** Every id clean-cache.ps1 knows. */
+export const CLEANABLE_CACHE_IDS = [...SAFE_CACHE_IDS, ...OTHER_CLEANABLE_IDS]

@@ -217,6 +217,8 @@ export type CategoryId =
   | 'build_cache'
   | 'dev_cache_safe'
   | 'dev_cache_review'
+  | 'browser_cache'
+  | 'recycle_bin'
   | 'leftover'
   | 'duplicate'
   | 'duplicate_folder'

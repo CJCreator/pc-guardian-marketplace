@@ -161,20 +161,25 @@ describe('classification (PLAN.md §5)', () => {
     )
     assert.notEqual(g?.accessedUtc, null)
   })
-  it('Temp files are never cleaned here: PC Guardian or Windows does it', () => {
-    const without = classifyScan({ walk: walk(), windows: null }, c).findings.find(f => f.category === 'user_temp')
-    const withPcg = classifyScan({ walk: walk(), windows: null }, ctx({ isPcGuardianInstalled: true })).findings.find(
-      f => f.category === 'user_temp',
-    )
-    assert.equal(without?.action, 'manual')
-    assert.equal(withPcg?.action, 'pc_guardian')
+  it('Temp files are cleaned here, by the cache script with its 7-day rule, with or without PC Guardian', () => {
+    for (const context of [c, ctx({ isPcGuardianInstalled: true })]) {
+      const temp = classifyScan({ walk: walk(), windows: null }, context).findings.find(f => f.category === 'user_temp')
+      assert.deepEqual([temp?.class, temp?.action, temp?.cacheId], ['safe', 'delete', 'user_temp'])
+      assert.match(temp?.reason ?? '', /7 days/)
+    }
   })
-  it('Windows-managed space is manual, never deleted by Drive Cleanup', () => {
+  it('Windows-managed space is manual; the Recycle Bin is its own cleanable item', () => {
     const scan = classifyScan({ walk: null, windows: windows() }, c)
     const update = scan.findings.find(f => f.evidence.rule === 'windows_update_cache')
     assert.equal(update?.action, 'manual')
     assert.ok(!scan.findings.some(f => f.path.endsWith('hiberfil.sys')))
-    assert.equal(scan.recoverable.manualBytes, 3 * 1024 ** 3 + 500 * 1024 ** 2)
+    const bin = scan.findings.find(f => f.evidence.rule === 'windows_recycle_bin')
+    assert.deepEqual(
+      [bin?.category, bin?.class, bin?.action, bin?.cacheId],
+      ['recycle_bin', 'safe', 'delete', 'recycle_bin'],
+    )
+    assert.match(bin?.reason ?? '', /for good/)
+    assert.equal(scan.recoverable.manualBytes, 3 * 1024 ** 3)
   })
   it('totals add up and mark capped kinds', () => {
     const cands = [

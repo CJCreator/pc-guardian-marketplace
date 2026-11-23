@@ -1,6 +1,6 @@
 # Drive Cleanup
 
-> **Beta (1.3.0-beta.1): not yet run on a Windows PC.** Every milestone in [PLAN.md](PLAN.md) is built
+> **Beta (1.4.0-beta.1): not yet run on a Windows PC.** Every milestone in [PLAN.md](PLAN.md) is built
 > and unit-tested, but the PowerShell scripts have not run on Windows yet. Follow
 > [TESTING.md](TESTING.md) on a test PC or with a backup before using it on files you care about.
 
@@ -10,7 +10,8 @@ Cleanup finds where the space went and what can be recovered safely, and you app
 - **Duplicate files and folders**, confirmed by SHA-256 of their contents, never by name (off until you
   turn it on, because it reads file contents; nothing leaves your PC).
 - **Old installers and archives**, including archives you already extracted.
-- **Old Temp folders, crash dumps, old app logs**, which programs re-create.
+- **Your Temp files** (unchanged for 7 days), **browser caches** (Edge, Chrome, Brave, Firefox, while closed; history, passwords and cookies are never touched), **old Temp folders, crash dumps, old app logs**, which programs re-create.
+- **The Recycle Bin**, only when you or Claude name it, and only items deleted before you say yes.
 - **Developer caches and build output**: npm, Yarn, pip, NuGet, VS Code, Antigravity (cleaned on
   approval); pnpm, Gradle, Maven, Docker (manual steps); Next.js, Vite, Turbo and Parcel caches inside
   projects.
