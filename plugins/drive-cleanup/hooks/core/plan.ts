@@ -38,7 +38,10 @@ export function chooseQuarantineRoot(
   const drives = (volume?.drives ?? []).filter(d => /^ntfs$/i.test(d.fileSystem) && /^[A-Za-z]:$/.test(d.letter))
   let candidates = drives
   if (setting === 'auto') {
-    const others = drives.filter(d => !d.isSystem).toSorted((a, b) => b.freeBytes - a.freeBytes)
+    // An external disk can be unplugged, and Restore would then fail: only a disk chosen by name goes there.
+    const others = drives
+      .filter(d => !d.isSystem && d.isExternal !== true)
+      .toSorted((a, b) => b.freeBytes - a.freeBytes)
     const system = drives.filter(d => d.isSystem)
     candidates = [...others, ...system]
   } else {

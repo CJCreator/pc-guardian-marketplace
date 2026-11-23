@@ -192,6 +192,12 @@ function storageAudit({ meta, volume, walk, windows, ctx }: ReportInput): string
   out.push('## What was not read', '')
   out.push(`- Folders that could not be opened: ${walk.deniedFolders.toLocaleString('en-US')}.`)
   for (const p of walk.deniedSample.slice(0, 20)) out.push(`  - ${p}`)
+  if (walk.longPathFolders > 0) {
+    out.push(
+      `- Folders with paths over 260 characters (Windows PowerShell cannot open them; their contents were not counted or offered): ${walk.longPathFolders.toLocaleString('en-US')}.`,
+    )
+    for (const p of walk.longPathSample.slice(0, 20)) out.push(`  - ${p}`)
+  }
   out.push(
     `- Linked folders (junctions, symbolic links, cloud folders) not followed: ${walk.linkedFolders.toLocaleString('en-US')}.`,
   )

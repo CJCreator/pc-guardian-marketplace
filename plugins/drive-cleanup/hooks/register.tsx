@@ -569,7 +569,7 @@ export const register: Register = on => {
           <Text>
             <Text weight="bold">Quarantine drive:</Text>{' '}
             {settings.quarantineDrive === 'auto'
-              ? 'Auto (another drive with room, else the system drive)'
+              ? 'Auto (another internal drive with room, else the system drive)'
               : settings.quarantineDrive}
           </Text>
           <Button

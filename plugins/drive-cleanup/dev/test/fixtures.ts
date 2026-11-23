@@ -72,6 +72,8 @@ export const walk = (candidates: RawCandidate[] = []): RawWalk => ({
   entryCount: 900_000,
   deniedFolders: 12,
   deniedSample: ['C:\\Windows\\CSC'],
+  longPathFolders: 0,
+  longPathSample: [],
   linkedFolders: 3,
   linkedSample: [`${PROFILE}\\OneDrive`],
   totals: { fileCount: 850_000, folderCount: 50_000, bytes: 400 * 1024 ** 3 },

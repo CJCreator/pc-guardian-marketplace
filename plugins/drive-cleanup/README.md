@@ -1,6 +1,6 @@
 # Drive Cleanup
 
-> **Beta (1.5.0-beta.1): not yet run on a Windows PC.** Every milestone in [PLAN.md](PLAN.md) is built
+> **Beta (1.6.0-beta.1): not yet run on a Windows PC.** Every milestone in [PLAN.md](PLAN.md) is built
 > and unit-tested, but the PowerShell scripts have not run on Windows yet. Follow
 > [TESTING.md](TESTING.md) on a test PC or with a backup before using it on files you care about.
 

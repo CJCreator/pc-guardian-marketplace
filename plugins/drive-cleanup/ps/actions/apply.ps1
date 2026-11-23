@@ -158,6 +158,29 @@ function Get-ProtectedReason([string]$path, [string]$category, [bool]$isFolder) 
 }
 
 # ------------------------------------------------------------------ helpers
+# Windows PowerShell 5.1 cannot open a path of 260 characters or more, so nothing
+# is moved to a place that long: it could be neither restored nor deleted later.
+$maxPath = 259
+
+# Expands 8.3 short names (PROGRA~1) to the real names, so the guard compares
+# what is really there. A segment that looks short is looked up in its parent:
+# Windows matches short names when listing with them as the pattern.
+function Resolve-LongName([string]$path) {
+    $parts = $path.Split('\')
+    if (-not ($parts | Where-Object { $_ -match '~\d' })) { return $path }
+    $sofar = $parts[0] + '\'
+    for ($i = 1; $i -lt $parts.Length; $i++) {
+        $seg = $parts[$i]
+        if ($seg -match '~\d') {
+            $found = @([System.IO.DirectoryInfo]::new($sofar).GetFileSystemInfos($seg))
+            if ($found.Count -ne 1) { throw 'Its name could not be resolved.' }
+            $seg = $found[0].Name
+        }
+        $sofar = [System.IO.Path]::Combine($sofar, $seg)
+    }
+    return $sofar
+}
+
 $sha = [System.Security.Cryptography.SHA256]::Create()
 function Get-Sha256([string]$path) {
     $share = [System.IO.FileShare]::Read
@@ -172,17 +195,19 @@ function Get-Sha256([string]$path) {
 function Get-TreeSize([string]$root) {
     $bytes = 0.0
     $hasLink = $false
+    $maxLength = $root.Length
     $pending = [System.Collections.Generic.Stack[string]]::new()
     $pending.Push($root)
     while ($pending.Count -gt 0) {
         $dir = $pending.Pop()
         foreach ($child in [System.IO.DirectoryInfo]::new($dir).EnumerateFileSystemInfos()) {
+            if ($child.FullName.Length -gt $maxLength) { $maxLength = $child.FullName.Length }
             if (($child.Attributes -band $script:reparsePoint) -ne 0) { $hasLink = $true; continue }
             if (($child.Attributes -band $script:directoryFlag) -ne 0) { $pending.Push($child.FullName); continue }
             $bytes += $child.Length
         }
     }
-    return @{ bytes = $bytes; hasLink = $hasLink }
+    return @{ bytes = $bytes; hasLink = $hasLink; maxLength = $maxLength }
 }
 
 function Test-SameVolume([string]$a, [string]$b) {
@@ -280,7 +305,7 @@ $isTruncated = $false
 
 foreach ($item in @($list.items)) {
     $id = [string]$item.id
-    $path = [System.IO.Path]::GetFullPath([string]$item.path).TrimEnd('\')
+    $path = [string]$item.path
     $isFolder = [bool]$item.isFolder
     $action = [string]$item.action
     $result = [ordered]@{ id = $id; status = 'skipped'; detail = ''; destination = $null; sha256 = $null; bytes = 0.0 }
@@ -291,6 +316,7 @@ foreach ($item in @($list.items)) {
         continue
     }
     try {
+        $path = Resolve-LongName ([System.IO.Path]::GetFullPath($path).TrimEnd('\'))
         $reason = Get-ProtectedReason $path ([string]$item.category) $isFolder
         if ($null -ne $reason) { throw ('Protected: ' + $reason + '.') }
         if ($isFolder) {
@@ -359,11 +385,13 @@ foreach ($item in @($list.items)) {
             }
             $relative = $path.Substring(0, 1) + $path.Substring(2)
             $dest = Join-Path $runDir $relative
+            if ($dest.Length -ge $maxPath) { throw 'Its path would be too long in quarantine (over 260 characters); move it yourself.' }
             if ([System.IO.File]::Exists($dest) -or [System.IO.Directory]::Exists($dest)) { throw 'Something is already at its quarantine place.' }
             [void][System.IO.Directory]::CreateDirectory((Split-Path -Parent $dest))
             if ($isFolder) {
                 $tree = Get-TreeSize $path
                 if ($tree.hasLink) { throw 'It contains a link or junction.' }
+                if ($dest.Length + $tree.maxLength - $path.Length -ge $maxPath) { throw 'A file in it would have a path too long in quarantine (over 260 characters); move it yourself.' }
                 $expected = [double]$item.bytes
                 if ($tree.bytes -gt ($expected * 1.05 + 1MB) -or $tree.bytes -lt ($expected * 0.95 - 1MB)) { throw 'It changed since the scan.' }
                 if (Test-SameVolume $path $dest) {
@@ -443,7 +471,7 @@ foreach ($item in @($list.items)) {
         $result.detail = [string]$_.Exception.Message
         if ($result.detail -match 'being used by another process') { $result.detail = 'It is in use.' }
         elseif ($result.detail -match 'denied' -and $result.detail -notmatch 'left in place') { $result.detail = 'Access was denied.' }
-        elseif ($result.detail -match 'too long|PathTooLong') { $result.detail = 'Its path is too long for Windows PowerShell; move it yourself.' }
+        elseif ($result.detail -match 'too long|PathTooLong' -and $result.detail -notmatch 'quarantine') { $result.detail = 'Its path is too long for Windows PowerShell; move it yourself.' }
     }
     $results.Add([pscustomobject]$result)
 }

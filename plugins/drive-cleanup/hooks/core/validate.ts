@@ -117,6 +117,7 @@ const drive: Check<RawDrive> = obj({
   freeBytes: num,
   isSystem: bool,
   mediaType: nullable(int),
+  isExternal: nullable(bool),
   healthStatus: nullable(str),
 })
 
@@ -179,6 +180,8 @@ export const RawWalkCheck: Check<RawWalk> = obj({
   entryCount: int,
   deniedFolders: int,
   deniedSample: list(str, WALK_LIMITS.samples),
+  longPathFolders: int,
+  longPathSample: list(str, WALK_LIMITS.samples),
   linkedFolders: int,
   linkedSample: list(str, WALK_LIMITS.samples),
   totals: obj({ fileCount: int, folderCount: int, bytes: num }),

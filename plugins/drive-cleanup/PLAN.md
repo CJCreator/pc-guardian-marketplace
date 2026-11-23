@@ -971,13 +971,13 @@ the elevated `Windows\Temp` cleanup; quarantine folders readable by every local 
 that trusted `restore.json`'s original paths; OneDrive, other browsers and mail stores unprotected; scans
 during a cleanup; stale approvals for later cache jobs. See CHANGELOG 1.5.0-beta.1.
 
-Known and left open (each needs a Windows run to settle):
+### 21.5 Open gaps closed (1.6)
 
-| Gap | Effect | Plan |
-| --- | --- | --- |
-| Paths over 260 characters | Windows PowerShell 5.1 cannot open them: counted as denied, skipped when cleaning | Measure on Windows; `\\?\` prefixes in the scripts if common |
-| External USB hard disks report as fixed (`DriveType=3`) | "Auto" may quarantine to a disk that is later unplugged; Restore then fails until it is back | Prefer internal disks (MSFT_Disk BusType) after testing |
-| 8.3 short names (`PROGRA~1`) | Not expanded by the guards; scan paths are long names, so not reachable today | `GetLongPathName` in `apply.ps1` |
-| A `'` or `$` in the user or plugin path | Administrator tasks refuse to start (message unclear) | Escape instead of refusing |
-| `large_old` has no user-area gate in `walk.ps1` | Wider than documented; `apply.ps1` and the protections still refuse system files | Gate after the first Windows run |
-| A partial Restore leaves the run's size unchanged in the index | Next prompt overstates what is left | Recompute from `restore.json` |
+| Gap | Now |
+| --- | --- |
+| Paths over 260 characters | `walk.ps1` counts them apart from denied folders (`longPathFolders`, with a sample) and the reports and summary say their contents were not read or offered. `apply.ps1` never moves anything to a quarantine path of 260 characters or more (a file, or the deepest file of a folder), so a quarantine can always be restored and deleted. Reading such folders (`\\?\` paths) waits for a Windows run: Windows PowerShell 5.1's legacy path handling makes it unsafe to assume. |
+| External USB disks reported as fixed | `volume.ps1` reads each disk's bus (`MSFT_PhysicalDisk.BusType`); USB, 1394, SD and MMC are `isExternal`. "Auto" never quarantines there and move advice never points there; a drive the person names in Settings is still used. |
+| 8.3 short names | `apply.ps1` expands each `~N` segment to its real name (listing the parent with the short name as pattern) before the guard; restore refuses any original with a short-name segment. |
+| `'` or `$` in the user or plugin path | Allowed: every path reaches PowerShell in single quotes, and `quote` doubles `'` and the typographic quotes PowerShell also accepts. Double quotes, control characters and wildcards are still refused. |
+| `large_old` outside the user's areas | Only in the user's own areas (profile outside AppData, top-level user folders), like installers and archives. |
+| Partial Restore left the size unchanged | The index subtracts what came back, so the next question says what is left. |

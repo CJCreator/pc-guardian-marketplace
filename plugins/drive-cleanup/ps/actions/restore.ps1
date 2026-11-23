@@ -98,6 +98,8 @@ $driveRoot = [string]$env:SystemDrive + '\'
 $forbidden = @($systemRoot, (Join-Path $driveRoot 'Program Files'), (Join-Path $driveRoot 'Program Files (x86)'), (Join-Path $driveRoot 'ProgramData'))
 function Test-Forbidden([string]$path) {
     if ($path -notmatch '^[A-Za-z]:\\' -or $path.Length -le 3) { return $true }
+    # An 8.3 short name (PROGRA~1) could hide a forbidden folder: never restore through one.
+    if ($path -match '~\d') { return $true }
     foreach ($r in $script:forbidden) { if ($path.Equals($r, $ignoreCase) -or $path.StartsWith($r + '\', $ignoreCase)) { return $true } }
     return $path -match '\\Start Menu\\Programs\\Startup(\\|$)'
 }

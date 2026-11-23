@@ -286,7 +286,7 @@ function summaryText(scan: LoadedScan): string {
     if (!scan.ctx.lastAccessTrusted)
       lines.push('Last-opened dates: Not checked (Windows is not recording them on this PC).')
     lines.push(
-      `Not read: ${String(scan.walk.deniedFolders)} folders without access; ${String(scan.walk.linkedFolders)} linked or cloud folders not followed. ${String(scan.walk.projectRootCount)} development projects were left untouched.`,
+      `Not read: ${String(scan.walk.deniedFolders)} folders without access; ${String(scan.walk.linkedFolders)} linked or cloud folders not followed${scan.walk.longPathFolders > 0 ? `; ${String(scan.walk.longPathFolders)} folders with paths too long to open (over 260 characters)` : ''}. ${String(scan.walk.projectRootCount)} development projects were left untouched.`,
     )
   }
   lines.push('Steps:', ...stepLines(scan), READ_ONLY_NOTE)

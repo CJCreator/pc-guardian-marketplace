@@ -18,6 +18,7 @@ import {
   ELEVATED_TASK_IDS,
   elevatedEstimate,
   elevatedSummary,
+  quote,
   encodeCommand,
   estimateBytes,
   launcherScript,
@@ -53,6 +54,8 @@ import {
 } from '../../hooks/core/validate.ts'
 import { parseSettings } from '../../hooks/settings-store.ts'
 import { candidate, ctx, NOW, PROFILE, volume, walk, windows } from './fixtures.ts'
+import { otherDrive } from '../../hooks/core/space.ts'
+import { RawVolumeCheck as VolumeCheck, RawWalkCheck } from '../../hooks/core/validate.ts'
 
 const PLUGIN = join(import.meta.dirname, '..', '..')
 const ps = (rel: string): string => readFileSync(join(PLUGIN, 'ps', ...rel.split('/')), 'utf8')
@@ -1073,5 +1076,60 @@ describe('review fixes (1.5)', () => {
     assert.match(apply, /SetAccessRuleProtection\(\$true, \$false\)/)
     assert.match(ps('actions/restore.ps1'), /Test-Forbidden \$dest/)
     assert.match(ps('actions/elevated.ps1'), /'Temp'\) '\*' \$now\.AddDays\(-7\) \$true \$true/)
+  })
+})
+
+describe('open gaps closed (1.6)', () => {
+  it('runs administrator tasks for a profile with an apostrophe or $ in its name', () => {
+    const odd = launch({
+      scriptPath: "C:\\Users\\D'Souza$\\.claude\\plugins\\cache\\techgramam\\drive-cleanup\\ps\\actions\\elevated.ps1",
+      resultPath:
+        "C:\\Users\\D'Souza$\\AppData\\Roaming\\techgramam-drive-cleanup\\elevated\\11111111-2222-3333-4444-555555555555.json",
+    })
+    assert.equal(checkLaunch(odd), null)
+    const boot = bootstrapScript(odd)
+    assert.ok(boot.includes("$scriptPath = 'C:\\Users\\D''Souza$\\"), 'the apostrophe is doubled inside single quotes')
+    assert.equal(quote('a\u2019b'), "'a\u2019\u2019b'", 'PowerShell reads typographic quotes as quotes too')
+    assert.match(checkLaunch(launch({ resultPath: 'C:\\x\\"evil".json' })) ?? '', /result path/)
+  })
+
+  it('never picks an external disk for quarantine or for moving folders, unless chosen by name', () => {
+    const base = volume()
+    const usb = {
+      letter: 'E:',
+      label: 'Backup',
+      fileSystem: 'NTFS',
+      totalBytes: 2 * 1024 ** 4,
+      freeBytes: 1.5 * 1024 ** 4,
+      isSystem: false,
+      mediaType: 3,
+      healthStatus: 'Healthy',
+      isExternal: true,
+    }
+    const v = { ...base, drives: [...base.drives, usb] }
+    const auto = chooseQuarantineRoot(v, 'auto', 5 * 1024 ** 3)
+    assert.ok(auto.status === 'ok' && auto.drive === 'C:', 'auto skips E:')
+    const named = chooseQuarantineRoot(v, 'E:', 5 * 1024 ** 3)
+    assert.ok(named.status === 'ok' && named.drive === 'E:', 'a drive the person chose is used')
+    assert.equal(otherDrive(v), undefined)
+    const parsed = VolumeCheck({ ...v, drives: [{ ...usb, isExternal: undefined }] }, 'volume')
+    assert.equal(parsed.drives[0]?.isExternal, null, 'older output without the field still reads')
+  })
+
+  it('apply.ps1 refuses quarantine paths over 260 characters and expands 8.3 names; restore refuses short names', () => {
+    const apply = ps('actions/apply.ps1')
+    assert.match(apply, /\$maxPath = 259/)
+    assert.match(apply, /\$path = Resolve-LongName/)
+    assert.match(apply, /GetFileSystemInfos\(\$seg\)/)
+    assert.match(ps('actions/restore.ps1'), /if \(\$path -match '~\\d'\) \{ return \$true \}/)
+    const walkPs = ps('scan/walk.ps1')
+    assert.match(walkPs, /PathTooLongException/)
+    assert.match(walkPs, /elseif \(\$isUserArea -and \$len -ge \$largeOldBytes/)
+    assert.match(ps('scan/volume.ps1'), /\$externalBuses = @\(4, 7, 12, 13\)/)
+  })
+
+  it('reports long paths as not read', () => {
+    const w = { ...walk(), longPathFolders: 3, longPathSample: ['C:\\Users\\Asha\\deep'] }
+    assert.equal(RawWalkCheck(w, 'walk').longPathFolders, 3)
   })
 })
