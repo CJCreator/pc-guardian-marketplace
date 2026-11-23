@@ -49,10 +49,7 @@ async function readCleanup($: EngineInterface): Promise<CleanupState> {
   return parsed.success ? parsed.data : IDLE_CLEANUP
 }
 
-async function setCleanup(
-  $: EngineInterface,
-  change: (state: CleanupState) => CleanupState,
-): Promise<void> {
+async function setCleanup($: EngineInterface, change: (state: CleanupState) => CleanupState): Promise<void> {
   await update($, cleanupAtom, current => {
     const parsed = CleanupStateSchema.safeParse(current)
     return change(parsed.success ? parsed.data : IDLE_CLEANUP)
@@ -64,8 +61,7 @@ async function readLog($: EngineInterface): Promise<CleanupLog> {
   return parseCleanupLog(await readDataJson($, CLEANUP_LOG_FILE))
 }
 
-export type PreviewOutcome =
-  { status: 'ok'; preview: CleanupPreview } | { status: 'error'; message: string }
+export type PreviewOutcome = { status: 'ok'; preview: CleanupPreview } | { status: 'error'; message: string }
 
 /**
  * Measures what cleanup could free now (read-only), and keeps it as the
@@ -82,9 +78,7 @@ export async function previewCleanup($: EngineInterface): Promise<PreviewOutcome
     const meta = { id: crypto.randomUUID(), now: Date.now() }
     const ran = await runScript($, 'cleanupPreview')
     const raw =
-      ran.status === 'ok'
-        ? parseScriptOutput(RawCleanupPreviewSchema, ran.stdout, 'cleanup-preview.ps1')
-        : ran
+      ran.status === 'ok' ? parseScriptOutput(RawCleanupPreviewSchema, ran.stdout, 'cleanup-preview.ps1') : ran
     if (raw.status !== 'ok') {
       outcome = {
         status: 'error',
@@ -140,17 +134,11 @@ async function setStartupApp(
   })
   if (ran.status !== 'ok') return { status: 'failed', detail: ran.detail }
   const parsed = parseScriptOutput(RawStartupChangeSchema, ran.stdout, 'set-startup.ps1')
-  return parsed.status === 'ok'
-    ? { status: 'ok', raw: parsed.data }
-    : { status: 'failed', detail: parsed.detail }
+  return parsed.status === 'ok' ? { status: 'ok', raw: parsed.data } : { status: 'failed', detail: parsed.detail }
 }
 
 /** One ticked item, by its own action. */
-async function cleanOne(
-  $: EngineInterface,
-  item: CleanupItem,
-  preview: CleanupPreview,
-): Promise<CleanupResult> {
+async function cleanOne($: EngineInterface, item: CleanupItem, preview: CleanupPreview): Promise<CleanupResult> {
   const target = item.target
   if (target.kind === 'startup') {
     const changed = await setStartupApp($, target.startup, 'off')
@@ -160,10 +148,7 @@ async function cleanOne(
   }
   switch (target.kind) {
     case 'temp':
-      return asRemoval(
-        item,
-        await runAction($, 'cleanTemp', { PCG_PREVIEWED_AT: preview.createdAt }),
-      )
+      return asRemoval(item, await runAction($, 'cleanTemp', { PCG_PREVIEWED_AT: preview.createdAt }))
     case 'browser_cache':
       return asRemoval(
         item,
@@ -173,19 +158,12 @@ async function cleanOne(
         }),
       )
     case 'recycle_bin':
-      return asRemoval(
-        item,
-        await runAction($, 'emptyRecycleBin', { PCG_EXPECTED_COUNT: String(target.itemCount) }),
-      )
+      return asRemoval(item, await runAction($, 'emptyRecycleBin', { PCG_EXPECTED_COUNT: String(target.itemCount) }))
   }
 }
 
 async function logRun($: EngineInterface, run: CleanupRun): Promise<void> {
-  const written = await writeDataFile(
-    $,
-    CLEANUP_LOG_FILE,
-    JSON.stringify(appendCleanupRun(await readLog($), run)),
-  )
+  const written = await writeDataFile($, CLEANUP_LOG_FILE, JSON.stringify(appendCleanupRun(await readLog($), run)))
   if (written.status !== 'written') {
     await pushNotice($, {
       level: 'warning',
@@ -194,8 +172,7 @@ async function logRun($: EngineInterface, run: CleanupRun): Promise<void> {
   }
 }
 
-export type CleanOutcome =
-  { status: 'ok'; run: CleanupRun } | { status: 'refused'; message: string }
+export type CleanOutcome = { status: 'ok'; run: CleanupRun } | { status: 'refused'; message: string }
 
 /**
  * Cleans the items the person ticked in the current preview and confirmed.
@@ -280,9 +257,7 @@ export async function restoreStartup(
   origin: 'dashboard' | 'pane',
 ): Promise<CleanOutcome> {
   const entry = startupTurnedOff((await readLog($)).runs).find(
-    off =>
-      off.ref.scope === ref.scope &&
-      off.ref.valueName.toLowerCase() === ref.valueName.toLowerCase(),
+    off => off.ref.scope === ref.scope && off.ref.valueName.toLowerCase() === ref.valueName.toLowerCase(),
   )
   if (entry === undefined) {
     return {
@@ -365,10 +340,11 @@ export async function cleanupFromPane($: EngineInterface): Promise<void> {
   let chosen = groups
   try {
     if (groups.length > 1) {
-      const answer = await $.ui.ask(
-        'Which should PC Guardian clean? Deleted files cannot be restored.',
-        { header: 'Clean up', multiSelect: true, options: groups.map(g => g.label) },
-      )
+      const answer = await $.ui.ask('Which should PC Guardian clean? Deleted files cannot be restored.', {
+        header: 'Clean up',
+        multiSelect: true,
+        options: groups.map(g => g.label),
+      })
       const picked = answer.split(',').map(part => part.trim())
       chosen = groups.filter(g => picked.includes(g.label))
       // Anything typed under "Other", or nothing ticked, cleans nothing.

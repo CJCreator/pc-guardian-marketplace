@@ -41,8 +41,7 @@ export const num: Check<number> = (v, at) =>
 export const int: Check<number> = (v, at) =>
   Number.isSafeInteger(v) && (v as number) >= 0 ? (v as number) : fail(at, 'expected an integer ≥ 0')
 
-export const bool: Check<boolean> = (v, at) =>
-  typeof v === 'boolean' ? v : fail(at, 'expected true or false')
+export const bool: Check<boolean> = (v, at) => (typeof v === 'boolean' ? v : fail(at, 'expected true or false'))
 
 export const isoTime: Check<string> = (v, at) => {
   const text = str(v, at)
@@ -187,10 +186,7 @@ export const RawWalkCheck: Check<RawWalk> = obj({
   folders: list(obj({ path: str, depth: int, bytes: num, fileCount: int }), WALK_LIMITS.folders),
   largest: list(file, WALK_LIMITS.largest),
   candidates: list(candidate, WALK_LIMITS.candidatesPerKind * CANDIDATE_KINDS.length),
-  candidateTotals: list(
-    obj({ kind: candidateKind, count: int, bytes: num, isCapped: bool }),
-    CANDIDATE_KINDS.length,
-  ),
+  candidateTotals: list(obj({ kind: candidateKind, count: int, bytes: num, isCapped: bool }), CANDIDATE_KINDS.length),
   userTemp: obj({ fileCount: int, bytes: num, oldCount: int, oldBytes: num }),
   projectRootCount: int,
   projectRootSample: list(str, WALK_LIMITS.samples),
@@ -242,7 +238,10 @@ export const RawDevCachesCheck: Check<RawDevCaches> = obj({
       lastWriteUtc: nullable(isoTime),
       isRunning: bool,
       isTruncated: bool,
-      roots: list(obj({ path: str, status: oneOf(['ok', 'missing', 'denied'] as const), bytes: num, fileCount: int }), 16),
+      roots: list(
+        obj({ path: str, status: oneOf(['ok', 'missing', 'denied'] as const), bytes: num, fileCount: int }),
+        16,
+      ),
     }),
     64,
   ),

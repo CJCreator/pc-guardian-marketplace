@@ -43,16 +43,10 @@ export const PANE_ID = 'pc-guardian'
 type Answer = { result: string }
 
 const answer = (summary: string, data: unknown): Answer => ({ result: toolText(summary, data) })
-const fail = (
-  code: ToolError['code'],
-  message: string,
-  suggestedAction: string,
-  recoverable = true,
-): Answer => ({
+const fail = (code: ToolError['code'], message: string, suggestedAction: string, recoverable = true): Answer => ({
   result: toolErrorText({ code, message, recoverable, suggestedAction }),
 })
-const NO_SCAN = (): Answer =>
-  fail('not_found', 'There is no scan yet.', 'Run run_full_audit first.')
+const NO_SCAN = (): Answer => fail('not_found', 'There is no scan yet.', 'Run run_full_audit first.')
 
 /** The session's latest scan, else the newest one in history. */
 async function latestScan($: EngineInterface): Promise<StoredScan | undefined> {
@@ -64,11 +58,7 @@ async function latestScan($: EngineInterface): Promise<StoredScan | undefined> {
 }
 
 /** A scan by id: the session's latest if it matches, else from history. */
-async function scanById(
-  $: EngineInterface,
-  id: string,
-  index: HistoryIndex,
-): Promise<StoredScan | undefined> {
+async function scanById($: EngineInterface, id: string, index: HistoryIndex): Promise<StoredScan | undefined> {
   const inSession = StoredScanSchema.safeParse(await read($, latestScanAtom))
   if (inSession.success && inSession.data.snapshot.id === id) return inSession.data
   const entry = index.entries.find(e => e.id === id)
@@ -106,8 +96,7 @@ async function fullAudit(
   signal: AbortSignal,
 ): Promise<Answer> {
   const parsed = parseToolInput('run_full_audit', call)
-  if (parsed.status !== 'ok')
-    return fail('invalid_input', parsed.message, 'Check the tool arguments.')
+  if (parsed.status !== 'ok') return fail('invalid_input', parsed.message, 'Check the tool arguments.')
   const outcome = await performAudit($, {}, signal)
   if (outcome.status !== 'ok') return { result: toolErrorText(outcome.error) }
   const view = auditView(outcome.scan, outcome.history)
@@ -121,8 +110,7 @@ async function area(
   signal: AbortSignal,
 ): Promise<Answer> {
   const parsed = parseToolInput(name, call)
-  if (parsed.status !== 'ok')
-    return fail('invalid_input', parsed.message, 'Check the tool arguments.')
+  if (parsed.status !== 'ok') return fail('invalid_input', parsed.message, 'Check the tool arguments.')
   const category = AREA_TOOLS[name]
   if (parsed.input.refresh !== true) {
     const scan = await latestScan($)
@@ -137,52 +125,33 @@ async function area(
   return answer(view.summary, view.data)
 }
 
-async function healthScore(
-  $: EngineInterface,
-  call: Readonly<Record<string, unknown>>,
-): Promise<Answer> {
+async function healthScore($: EngineInterface, call: Readonly<Record<string, unknown>>): Promise<Answer> {
   const parsed = parseToolInput('get_health_score', call)
-  if (parsed.status !== 'ok')
-    return fail('invalid_input', parsed.message, 'Check the tool arguments.')
+  if (parsed.status !== 'ok') return fail('invalid_input', parsed.message, 'Check the tool arguments.')
   const scan = await latestScan($)
   if (scan === undefined) return NO_SCAN()
   const view = healthScoreView(scan)
   return answer(view.summary, view.data)
 }
 
-async function recommendations(
-  $: EngineInterface,
-  call: Readonly<Record<string, unknown>>,
-): Promise<Answer> {
+async function recommendations($: EngineInterface, call: Readonly<Record<string, unknown>>): Promise<Answer> {
   const parsed = parseToolInput('get_recommendations', call)
-  if (parsed.status !== 'ok')
-    return fail('invalid_input', parsed.message, 'Check the tool arguments.')
+  if (parsed.status !== 'ok') return fail('invalid_input', parsed.message, 'Check the tool arguments.')
   const scan = await latestScan($)
   if (scan === undefined) return NO_SCAN()
   const view = recommendationsView(scan, parsed.input)
   return answer(view.summary, view.data)
 }
 
-async function report(
-  $: EngineInterface,
-  call: Readonly<Record<string, unknown>>,
-): Promise<Answer> {
+async function report($: EngineInterface, call: Readonly<Record<string, unknown>>): Promise<Answer> {
   const parsed = parseToolInput('generate_report', call)
-  if (parsed.status !== 'ok')
-    return fail('invalid_input', parsed.message, 'Check the tool arguments.')
+  if (parsed.status !== 'ok') return fail('invalid_input', parsed.message, 'Check the tool arguments.')
   const index = await loadHistoryIndex($)
-  const scan =
-    parsed.input.scanId === undefined
-      ? await latestScan($)
-      : await scanById($, parsed.input.scanId, index)
+  const scan = parsed.input.scanId === undefined ? await latestScan($) : await scanById($, parsed.input.scanId, index)
   if (scan === undefined) {
     return parsed.input.scanId === undefined
       ? NO_SCAN()
-      : fail(
-          'not_found',
-          `No saved scan has the id ${parsed.input.scanId}.`,
-          'Use get_scan_history to list scans.',
-        )
+      : fail('not_found', `No saved scan has the id ${parsed.input.scanId}.`, 'Use get_scan_history to list scans.')
   }
   const redact = parsed.input.redactPersonalPaths ?? true
   const generated = generateReport(
@@ -226,40 +195,26 @@ async function report(
   })
 }
 
-async function scanHistory(
-  $: EngineInterface,
-  call: Readonly<Record<string, unknown>>,
-): Promise<Answer> {
+async function scanHistory($: EngineInterface, call: Readonly<Record<string, unknown>>): Promise<Answer> {
   const parsed = parseToolInput('get_scan_history', call)
-  if (parsed.status !== 'ok')
-    return fail('invalid_input', parsed.message, 'Check the tool arguments.')
+  if (parsed.status !== 'ok') return fail('invalid_input', parsed.message, 'Check the tool arguments.')
   const view = historyView(await loadHistoryIndex($), parsed.input.offset, parsed.input.limit)
   return answer(view.summary, view.data)
 }
 
-async function compare(
-  $: EngineInterface,
-  call: Readonly<Record<string, unknown>>,
-): Promise<Answer> {
+async function compare($: EngineInterface, call: Readonly<Record<string, unknown>>): Promise<Answer> {
   const parsed = parseToolInput('compare_scans', call)
-  if (parsed.status !== 'ok')
-    return fail('invalid_input', parsed.message, 'Check the tool arguments.')
+  if (parsed.status !== 'ok') return fail('invalid_input', parsed.message, 'Check the tool arguments.')
   const index = await loadHistoryIndex($)
   const toEntry =
-    parsed.input.toScanId === undefined
-      ? index.entries[0]
-      : index.entries.find(e => e.id === parsed.input.toScanId)
+    parsed.input.toScanId === undefined ? index.entries[0] : index.entries.find(e => e.id === parsed.input.toScanId)
   const toPosition = toEntry === undefined ? -1 : index.entries.indexOf(toEntry)
   const fromEntry =
     parsed.input.fromScanId === undefined
       ? index.entries[toPosition + 1]
       : index.entries.find(e => e.id === parsed.input.fromScanId)
   if (toEntry === undefined || fromEntry === undefined) {
-    return fail(
-      'not_found',
-      'Comparing needs two saved scans.',
-      'Run run_full_audit again later, then compare.',
-    )
+    return fail('not_found', 'Comparing needs two saved scans.', 'Run run_full_audit again later, then compare.')
   }
   const [from, to] = await Promise.all([loadStoredScan($, fromEntry), loadStoredScan($, toEntry)])
   if (from === undefined || to === undefined) {
@@ -273,13 +228,9 @@ async function compare(
   return answer(view.summary, view.data)
 }
 
-async function openDashboard(
-  $: EngineInterface,
-  call: Readonly<Record<string, unknown>>,
-): Promise<Answer> {
+async function openDashboard($: EngineInterface, call: Readonly<Record<string, unknown>>): Promise<Answer> {
   const parsed = parseToolInput('open_dashboard', call)
-  if (parsed.status !== 'ok')
-    return fail('invalid_input', parsed.message, 'Check the tool arguments.')
+  if (parsed.status !== 'ok') return fail('invalid_input', parsed.message, 'Check the tool arguments.')
   const target = parsed.input.target ?? 'both'
   const lines: string[] = []
   const data: { pane?: { isPlaced: boolean }; browser?: BrowserDashboard } = {}

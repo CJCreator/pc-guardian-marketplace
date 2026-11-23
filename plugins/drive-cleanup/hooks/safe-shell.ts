@@ -101,8 +101,15 @@ async function runAllowlisted(
     return notChecked('timeout', `${spec.file} did not finish within ${String(spec.timeoutMs / 1000)} s.`)
   }
   if (ran.exitCode !== 0) {
-    const reason = ran.stderr.split(/\r?\n/).find(l => l.trim() !== '')?.slice(0, 200) ?? ''
-    return notChecked('failed', `${spec.file} exited with code ${String(ran.exitCode)}${reason === '' ? '' : `: ${reason}`}.`)
+    const reason =
+      ran.stderr
+        .split(/\r?\n/)
+        .find(l => l.trim() !== '')
+        ?.slice(0, 200) ?? ''
+    return notChecked(
+      'failed',
+      `${spec.file} exited with code ${String(ran.exitCode)}${reason === '' ? '' : `: ${reason}`}.`,
+    )
   }
   if (ran.isStdoutTruncated || utf8.encode(ran.stdout).length > spec.maxOutputBytes) {
     return notChecked(

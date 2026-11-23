@@ -101,20 +101,48 @@ export const register: Register = on => {
   })
 
   // One hook per tool, each named literally. All of them only read.
-  on('tool.call', { tool: 'mcp__drive-cleanup__self_check' }, ($, e) => answerTool($, 'self_check', e)).catch(internalFailure)
-  on('tool.call', { tool: 'mcp__drive-cleanup__run_deep_scan' }, ($, e) => answerTool($, 'run_deep_scan', e)).catch(internalFailure)
-  on('tool.call', { tool: 'mcp__drive-cleanup__get_scan_status' }, ($, e) => answerTool($, 'get_scan_status', e)).catch(internalFailure)
-  on('tool.call', { tool: 'mcp__drive-cleanup__get_storage_summary' }, ($, e) => answerTool($, 'get_storage_summary', e)).catch(internalFailure)
-  on('tool.call', { tool: 'mcp__drive-cleanup__get_largest_files' }, ($, e) => answerTool($, 'get_largest_files', e)).catch(internalFailure)
-  on('tool.call', { tool: 'mcp__drive-cleanup__get_findings' }, ($, e) => answerTool($, 'get_findings', e)).catch(internalFailure)
-  on('tool.call', { tool: 'mcp__drive-cleanup__get_windows_recommendations' }, ($, e) => answerTool($, 'get_windows_recommendations', e)).catch(internalFailure)
-  on('tool.call', { tool: 'mcp__drive-cleanup__generate_audit_reports' }, ($, e) => answerTool($, 'generate_audit_reports', e)).catch(internalFailure)
-  on('tool.call', { tool: 'mcp__drive-cleanup__get_dev_caches' }, ($, e) => answerTool($, 'get_dev_caches', e)).catch(internalFailure)
-  on('tool.call', { tool: 'mcp__drive-cleanup__get_duplicate_groups' }, ($, e) => answerTool($, 'get_duplicate_groups', e)).catch(internalFailure)
-  on('tool.call', { tool: 'mcp__drive-cleanup__get_quarantine' }, ($, e) => answerTool($, 'get_quarantine', e)).catch(internalFailure)
-  on('tool.call', { tool: 'mcp__drive-cleanup__get_settings' }, ($, e) => answerTool($, 'get_settings', e)).catch(internalFailure)
-  on('tool.call', { tool: 'mcp__drive-cleanup__verify_cleanup' }, ($, e) => answerTool($, 'verify_cleanup', e)).catch(internalFailure)
-  on('tool.call', { tool: 'mcp__drive-cleanup__open_pane' }, ($, e) => answerTool($, 'open_pane', e)).catch(internalFailure)
+  on('tool.call', { tool: 'mcp__drive-cleanup__self_check' }, ($, e) => answerTool($, 'self_check', e)).catch(
+    internalFailure,
+  )
+  on('tool.call', { tool: 'mcp__drive-cleanup__run_deep_scan' }, ($, e) => answerTool($, 'run_deep_scan', e)).catch(
+    internalFailure,
+  )
+  on('tool.call', { tool: 'mcp__drive-cleanup__get_scan_status' }, ($, e) => answerTool($, 'get_scan_status', e)).catch(
+    internalFailure,
+  )
+  on('tool.call', { tool: 'mcp__drive-cleanup__get_storage_summary' }, ($, e) =>
+    answerTool($, 'get_storage_summary', e),
+  ).catch(internalFailure)
+  on('tool.call', { tool: 'mcp__drive-cleanup__get_largest_files' }, ($, e) =>
+    answerTool($, 'get_largest_files', e),
+  ).catch(internalFailure)
+  on('tool.call', { tool: 'mcp__drive-cleanup__get_findings' }, ($, e) => answerTool($, 'get_findings', e)).catch(
+    internalFailure,
+  )
+  on('tool.call', { tool: 'mcp__drive-cleanup__get_windows_recommendations' }, ($, e) =>
+    answerTool($, 'get_windows_recommendations', e),
+  ).catch(internalFailure)
+  on('tool.call', { tool: 'mcp__drive-cleanup__generate_audit_reports' }, ($, e) =>
+    answerTool($, 'generate_audit_reports', e),
+  ).catch(internalFailure)
+  on('tool.call', { tool: 'mcp__drive-cleanup__get_dev_caches' }, ($, e) => answerTool($, 'get_dev_caches', e)).catch(
+    internalFailure,
+  )
+  on('tool.call', { tool: 'mcp__drive-cleanup__get_duplicate_groups' }, ($, e) =>
+    answerTool($, 'get_duplicate_groups', e),
+  ).catch(internalFailure)
+  on('tool.call', { tool: 'mcp__drive-cleanup__get_quarantine' }, ($, e) => answerTool($, 'get_quarantine', e)).catch(
+    internalFailure,
+  )
+  on('tool.call', { tool: 'mcp__drive-cleanup__get_settings' }, ($, e) => answerTool($, 'get_settings', e)).catch(
+    internalFailure,
+  )
+  on('tool.call', { tool: 'mcp__drive-cleanup__verify_cleanup' }, ($, e) => answerTool($, 'verify_cleanup', e)).catch(
+    internalFailure,
+  )
+  on('tool.call', { tool: 'mcp__drive-cleanup__open_pane' }, ($, e) => answerTool($, 'open_pane', e)).catch(
+    internalFailure,
+  )
 
   on('ui.render', { component: 'Pane', requestId: PANE_ID }, async ($, e) => {
     const { Box, Text, Button } = $.ui.resolve(e)
@@ -138,7 +166,11 @@ export const register: Register = on => {
         )}
       </Box>
     )
-    const header = <Box flexDirection="row" gap={1}>{tabs}</Box>
+    const header = (
+      <Box flexDirection="row" gap={1}>
+        {tabs}
+      </Box>
+    )
 
     // ------------------------------------------------------------ overview
     if (view.name === 'overview') {
@@ -157,7 +189,8 @@ export const register: Register = on => {
                 <Text>
                   <Text weight="bold">{summary.drive.letter}</Text>{' '}
                   {bar(1 - summary.drive.freeBytes / Math.max(1, summary.drive.totalBytes), width)}{' '}
-                  {sizeText(summary.drive.freeBytes)} free ({percentText(summary.drive.freeBytes, summary.drive.totalBytes)})
+                  {sizeText(summary.drive.freeBytes)} free (
+                  {percentText(summary.drive.freeBytes, summary.drive.totalBytes)})
                 </Text>
               )}
               <Text>A. Safe to clean: {sizeText(summary.recoverable.safeBytes)}</Text>
@@ -169,12 +202,18 @@ export const register: Register = on => {
                 </Text>
               ))}
               {summary.isPartial && <Text color="warning">Partial scan: some steps were not completed.</Text>}
-              {summary.lastAuditFolder !== null && <Text dimColor wrap="truncate-middle">Reports: {summary.lastAuditFolder}</Text>}
+              {summary.lastAuditFolder !== null && (
+                <Text dimColor wrap="truncate-middle">
+                  Reports: {summary.lastAuditFolder}
+                </Text>
+              )}
             </Box>
           )}
           {progress !== null && (
             <Box flexDirection="column">
-              <Text weight="bold">{isRunning ? `Scanning · ${seconds(Date.now() - progress.startedAt)} so far` : 'Last scan'}</Text>
+              <Text weight="bold">
+                {isRunning ? `Scanning · ${seconds(Date.now() - progress.startedAt)} so far` : 'Last scan'}
+              </Text>
               {progress.steps.map(step => (
                 <Text dimColor={step.state === 'pending'} color={step.state === 'not_checked' ? 'warning' : undefined}>
                   {STEP_MARK[step.state]} {step.label}
@@ -200,9 +239,22 @@ export const register: Register = on => {
           )}
           <Box flexDirection="row" gap={1}>
             {isRunning ? (
-              <Button key="cancel" label="Cancel after this step" onPress={() => { requestCancel() }} />
+              <Button
+                key="cancel"
+                label="Cancel after this step"
+                onPress={() => {
+                  requestCancel()
+                }}
+              />
             ) : (
-              <Button key="run" label="Run deep scan" variant="primary" onPress={() => { void startScan($).catch(() => undefined) }} />
+              <Button
+                key="run"
+                label="Run deep scan"
+                variant="primary"
+                onPress={() => {
+                  void startScan($).catch(() => undefined)
+                }}
+              />
             )}
             {!isRunning && summary !== null && (
               <Button
@@ -283,13 +335,34 @@ export const register: Register = on => {
               return (
                 <Box flexDirection="column">
                   <Text>
-                    <Text weight="bold">{CATEGORY_LABEL[cat]}</Text> ({cls}) · {String(items.length)} · {sizeText(bytes)}
+                    <Text weight="bold">{CATEGORY_LABEL[cat]}</Text> ({cls}) · {String(items.length)} ·{' '}
+                    {sizeText(bytes)}
                     {chosen.length > 0 ? ` · ${String(chosen.length)} selected` : ''}
                   </Text>
                   <Box flexDirection="row" gap={1}>
-                    <Button key={`show-${cat}`} label="Show items" onPress={() => { void setView($, { category: cat, page: 0 }) }} />
-                    <Button key={`all-${cat}`} label="Select all" dimColor onPress={() => { void toggle($, scan.meta.scanId, ids, true) }} />
-                    <Button key={`none-${cat}`} label="Clear" dimColor onPress={() => { void toggle($, scan.meta.scanId, ids, false) }} />
+                    <Button
+                      key={`show-${cat}`}
+                      label="Show items"
+                      onPress={() => {
+                        void setView($, { category: cat, page: 0 })
+                      }}
+                    />
+                    <Button
+                      key={`all-${cat}`}
+                      label="Select all"
+                      dimColor
+                      onPress={() => {
+                        void toggle($, scan.meta.scanId, ids, true)
+                      }}
+                    />
+                    <Button
+                      key={`none-${cat}`}
+                      label="Clear"
+                      dimColor
+                      onPress={() => {
+                        void toggle($, scan.meta.scanId, ids, false)
+                      }}
+                    />
                   </Box>
                 </Box>
               )
@@ -308,7 +381,8 @@ export const register: Register = on => {
         <Box flexDirection="column" gap={1}>
           {header}
           <Text weight="bold">
-            {CATEGORY_LABEL[view.category as Finding['category']] ?? view.category} · page {String(page + 1)} of {String(pages)}
+            {CATEGORY_LABEL[view.category as Finding['category']] ?? view.category} · page {String(page + 1)} of{' '}
+            {String(pages)}
           </Text>
           {shown.map(f => (
             <Box flexDirection="column">
@@ -326,9 +400,31 @@ export const register: Register = on => {
             </Box>
           ))}
           <Box flexDirection="row" gap={1}>
-            <Button key="back" label="Back" onPress={() => { void setView($, { category: null, page: 0 }) }} />
-            {page > 0 && <Button key="prev" label="Previous" onPress={() => { void setView($, { page: page - 1 }) }} />}
-            {page < pages - 1 && <Button key="next" label="Next" onPress={() => { void setView($, { page: page + 1 }) }} />}
+            <Button
+              key="back"
+              label="Back"
+              onPress={() => {
+                void setView($, { category: null, page: 0 })
+              }}
+            />
+            {page > 0 && (
+              <Button
+                key="prev"
+                label="Previous"
+                onPress={() => {
+                  void setView($, { page: page - 1 })
+                }}
+              />
+            )}
+            {page < pages - 1 && (
+              <Button
+                key="next"
+                label="Next"
+                onPress={() => {
+                  void setView($, { page: page + 1 })
+                }}
+              />
+            )}
           </Box>
           {bottom}
           {footer}
@@ -347,24 +443,45 @@ export const register: Register = on => {
           {runs.slice(0, 12).map(r => (
             <Box flexDirection="column">
               <Text>
-                <Text weight="bold">{r.startedAt.slice(0, 16).replace('T', ' ')}</Text> · moved {sizeText(r.quarantinedBytes)} · deleted{' '}
-                {sizeText(r.deletedBytes)} · {String(r.skipped)} skipped
+                <Text weight="bold">{r.startedAt.slice(0, 16).replace('T', ' ')}</Text> · moved{' '}
+                {sizeText(r.quarantinedBytes)} · deleted {sizeText(r.deletedBytes)} · {String(r.skipped)} skipped
               </Text>
               {r.quarantineDir !== null && (
                 <Text dimColor wrap="truncate-middle">
-                  {r.quarantineState === 'active' ? 'In quarantine: ' : r.quarantineState === 'restored' ? 'Restored from: ' : r.quarantineState === 'purged' ? 'Deleted for good: ' : ''}
+                  {r.quarantineState === 'active'
+                    ? 'In quarantine: '
+                    : r.quarantineState === 'restored'
+                      ? 'Restored from: '
+                      : r.quarantineState === 'purged'
+                        ? 'Deleted for good: '
+                        : ''}
                   {r.quarantineDir}
                 </Text>
               )}
               {r.quarantineState === 'active' && (
                 <Box flexDirection="row" gap={1}>
-                  <Button key={`restore-${r.runId}`} label="Restore" onPress={() => { start(() => restoreRun($, r.runId)) }} />
-                  <Button key={`purge-${r.runId}`} label="Delete for good…" dimColor onPress={() => { start(() => purgeRun($, r.runId)) }} />
+                  <Button
+                    key={`restore-${r.runId}`}
+                    label="Restore"
+                    onPress={() => {
+                      start(() => restoreRun($, r.runId))
+                    }}
+                  />
+                  <Button
+                    key={`purge-${r.runId}`}
+                    label="Delete for good…"
+                    dimColor
+                    onPress={() => {
+                      start(() => purgeRun($, r.runId))
+                    }}
+                  />
                 </Box>
               )}
             </Box>
           ))}
-          <Text dimColor>Quarantine is never deleted by itself. Delete a run for good once you are sure, to free its space.</Text>
+          <Text dimColor>
+            Quarantine is never deleted by itself. Delete a run for good once you are sure, to free its space.
+          </Text>
           {footer}
         </Box>
       )
@@ -373,7 +490,10 @@ export const register: Register = on => {
     // ------------------------------------------------------------ settings
     const settings = await loadSettings($)
     const scan = await loadLatestScan($)
-    const drives = ['auto', ...(scan?.volume?.drives ?? []).filter(d => /^ntfs$/i.test(d.fileSystem)).map(d => d.letter.toUpperCase())]
+    const drives = [
+      'auto',
+      ...(scan?.volume?.drives ?? []).filter(d => /^ntfs$/i.test(d.fileSystem)).map(d => d.letter.toUpperCase()),
+    ]
     const nextDrive = drives[(drives.indexOf(settings.quarantineDrive) + 1) % drives.length] ?? 'auto'
     return (
       <Box flexDirection="column" gap={1}>
@@ -382,20 +502,37 @@ export const register: Register = on => {
           <Text>
             <Text weight="bold">Cleanup:</Text> {settings.cleanupEnabled ? 'on' : 'off'}
           </Text>
-          <Button key="set-cleanup" label={settings.cleanupEnabled ? 'Turn off' : 'Turn on…'} onPress={() => { start(() => toggleCleanup($)) }} />
+          <Button
+            key="set-cleanup"
+            label={settings.cleanupEnabled ? 'Turn off' : 'Turn on…'}
+            onPress={() => {
+              start(() => toggleCleanup($))
+            }}
+          />
         </Box>
         <Box flexDirection="column">
           <Text>
-            <Text weight="bold">Duplicate search (reads file contents):</Text> {settings.duplicatesEnabled ? 'on' : 'off'}
+            <Text weight="bold">Duplicate search (reads file contents):</Text>{' '}
+            {settings.duplicatesEnabled ? 'on' : 'off'}
           </Text>
           <Text dimColor>
-            Files from {sizeText(settings.minDuplicateBytes)} to {sizeText(settings.maxHashBytes)}, in your profile and top-level folders.
+            Files from {sizeText(settings.minDuplicateBytes)} to {sizeText(settings.maxHashBytes)}, in your profile and
+            top-level folders.
           </Text>
-          <Button key="set-dupes" label={settings.duplicatesEnabled ? 'Turn off' : 'Turn on…'} onPress={() => { start(() => toggleDuplicates($)) }} />
+          <Button
+            key="set-dupes"
+            label={settings.duplicatesEnabled ? 'Turn off' : 'Turn on…'}
+            onPress={() => {
+              start(() => toggleDuplicates($))
+            }}
+          />
         </Box>
         <Box flexDirection="column">
           <Text>
-            <Text weight="bold">Quarantine drive:</Text> {settings.quarantineDrive === 'auto' ? 'Auto (another drive with room, else the system drive)' : settings.quarantineDrive}
+            <Text weight="bold">Quarantine drive:</Text>{' '}
+            {settings.quarantineDrive === 'auto'
+              ? 'Auto (another drive with room, else the system drive)'
+              : settings.quarantineDrive}
           </Text>
           <Button
             key="set-drive"
@@ -403,7 +540,10 @@ export const register: Register = on => {
             onPress={() => {
               start(async () => {
                 await saveSettings($, s => ({ ...s, quarantineDrive: nextDrive }))
-                await setActivity($, { state: 'idle', message: `Quarantine drive: ${nextDrive === 'auto' ? 'Auto' : nextDrive}.` })
+                await setActivity($, {
+                  state: 'idle',
+                  message: `Quarantine drive: ${nextDrive === 'auto' ? 'Auto' : nextDrive}.`,
+                })
               })
             }}
           />

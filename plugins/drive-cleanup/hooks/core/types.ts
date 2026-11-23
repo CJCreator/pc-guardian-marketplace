@@ -2,8 +2,7 @@
 
 export type StepId = 'volume' | 'walk' | 'devcaches' | 'leftovers' | 'windows' | 'hash'
 
-export type NotCheckedReason =
-  'needs_admin' | 'timeout' | 'failed' | 'cancelled' | 'unsupported_platform' | 'disabled'
+export type NotCheckedReason = 'needs_admin' | 'timeout' | 'failed' | 'cancelled' | 'unsupported_platform' | 'disabled'
 
 export type NotChecked = { status: 'not_checked'; reason: NotCheckedReason; detail: string }
 

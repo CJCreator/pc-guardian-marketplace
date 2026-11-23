@@ -1,0 +1,15 @@
+{
+  "name": "techgramam-marketplace",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "lint": "oxlint --deny-warnings",
+    "ci": "bun dev/ci.ts"
+  },
+  "devDependencies": {
+    "@anthropic-ai/claude-code": "2.1.330",
+    "@types/bun": "1.4.4",
+    "@types/node": "22.20.5",
+    "oxlint": "1.94.0"
+  }
+}

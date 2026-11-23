@@ -43,14 +43,22 @@ export async function readRunIndex($: EngineInterface): Promise<RunIndexEntry[]>
   return parseIndex(await readDataFile($, INDEX_FILE))
 }
 
-async function saveRun($: EngineInterface, record: RunRecord, change: (index: RunIndexEntry[]) => RunIndexEntry[]): Promise<void> {
+async function saveRun(
+  $: EngineInterface,
+  record: RunRecord,
+  change: (index: RunIndexEntry[]) => RunIndexEntry[],
+): Promise<void> {
   await writeDataFile($, `runs/${record.runId}.json`, JSON.stringify(record))
   const index = change(await readRunIndex($)).slice(0, 200)
   await writeDataFile($, INDEX_FILE, JSON.stringify(index))
   // The manifest grows by appending; past its size limit a new one is started.
   let manifest = (await readDataFile($, MANIFEST_FILE)) ?? emptyManifest()
   if (manifest.length > MANIFEST_LIMIT) {
-    await writeDataFile($, `manifest/deletion_manifest-${record.startedAt.replace(/[-:.]/g, '').slice(0, 15)}.csv`, manifest)
+    await writeDataFile(
+      $,
+      `manifest/deletion_manifest-${record.startedAt.replace(/[-:.]/g, '').slice(0, 15)}.csv`,
+      manifest,
+    )
     manifest = emptyManifest()
   }
   await writeDataFile($, MANIFEST_FILE, manifest + manifestRows(record))
@@ -151,18 +159,36 @@ async function cleanSelectedInner($: EngineInterface): Promise<void> {
     }
     for (const job of approved.caches) {
       await say($, `Cleaning ${job.label}…`, 'working')
-      const ran = await runAction($, 'cleanCache', { DC_CACHE_ID: job.cacheId, DC_APPROVED_AT: approved.list.approvedAt })
+      const ran = await runAction($, 'cleanCache', {
+        DC_CACHE_ID: job.cacheId,
+        DC_APPROVED_AT: approved.list.approvedAt,
+      })
       const parsed = ran.status === 'ok' ? parseOutput(RawCacheCleanCheck, ran.stdout, 'clean-cache.ps1') : ran
       if (parsed.status !== 'ok') {
-        results.push({ id: job.findingId, status: 'skipped', detail: parsed.detail, destination: null, sha256: null, bytes: 0 })
+        results.push({
+          id: job.findingId,
+          status: 'skipped',
+          detail: parsed.detail,
+          destination: null,
+          sha256: null,
+          bytes: 0,
+        })
       } else if (parsed.data.status === 'refused') {
-        results.push({ id: job.findingId, status: 'skipped', detail: parsed.data.detail, destination: null, sha256: null, bytes: 0 })
+        results.push({
+          id: job.findingId,
+          status: 'skipped',
+          detail: parsed.data.detail,
+          destination: null,
+          sha256: null,
+          bytes: 0,
+        })
       } else {
         deletedBytes += parsed.data.removedBytes
         results.push({
           id: job.findingId,
           status: 'deleted',
-          detail: parsed.data.skippedCount > 0 ? `${String(parsed.data.skippedCount)} files in use or newer were kept.` : '',
+          detail:
+            parsed.data.skippedCount > 0 ? `${String(parsed.data.skippedCount)} files in use or newer were kept.` : '',
           destination: null,
           sha256: null,
           bytes: parsed.data.removedBytes,
@@ -193,7 +219,10 @@ async function cleanSelectedInner($: EngineInterface): Promise<void> {
     messages,
   }
   await saveRun($, record, index => [indexEntry(record), ...index])
-  await markDone($, results.filter(r => r.status !== 'skipped').map(r => r.id))
+  await markDone(
+    $,
+    results.filter(r => r.status !== 'skipped').map(r => r.id),
+  )
   await setSelection($, () => ({ scanId: scan.meta.scanId, ids: [] }))
   invalidateScan()
   const after = await loadLatestScan($)
@@ -213,11 +242,19 @@ export async function restoreRun($: EngineInterface, runId: string): Promise<voi
     if (entry === undefined || entry.quarantineRoot === null || entry.quarantineState !== 'active') {
       return await say($, 'That quarantine run cannot be restored.')
     }
-    const isYes = await confirm($, `Put back the ${fmtBytes(entry.quarantinedBytes)} quarantined on ${entry.startedAt.slice(0, 16).replace('T', ' ')}? Anything whose original place is taken again stays in quarantine.`, 'Restore')
+    const isYes = await confirm(
+      $,
+      `Put back the ${fmtBytes(entry.quarantinedBytes)} quarantined on ${entry.startedAt.slice(0, 16).replace('T', ' ')}? Anything whose original place is taken again stays in quarantine.`,
+      'Restore',
+    )
     if (!isYes) return await say($, 'Nothing was changed.')
     await say($, 'Restoring…', 'working')
     const startedAt = new Date().toISOString()
-    const ran = await runAction($, 'restore', { DC_RUN_ID: runId, DC_QUARANTINE_ROOT: entry.quarantineRoot, DC_LIST_ID: '' })
+    const ran = await runAction($, 'restore', {
+      DC_RUN_ID: runId,
+      DC_QUARANTINE_ROOT: entry.quarantineRoot,
+      DC_LIST_ID: '',
+    })
     const parsed = ran.status === 'ok' ? parseOutput(RawApplyCheck, ran.stdout, 'restore.ps1') : ran
     if (parsed.status !== 'ok') return await say($, `Restore did not run: ${parsed.detail}`)
     if (parsed.data.status === 'refused') return await say($, parsed.data.detail)
@@ -225,7 +262,12 @@ export async function restoreRun($: EngineInterface, runId: string): Promise<voi
     const original = await readRunRecord($, runId)
     const known = new Map<string, Finding>()
     for (const item of original?.items ?? []) {
-      known.set(item.id, { path: item.path, category: item.category, reason: item.reason, action: item.action } as unknown as Finding)
+      known.set(item.id, {
+        path: item.path,
+        category: item.category,
+        reason: item.reason,
+        action: item.action,
+      } as unknown as Finding)
     }
     const record: RunRecord = {
       runId: crypto.randomUUID(),
@@ -239,14 +281,19 @@ export async function restoreRun($: EngineInterface, runId: string): Promise<voi
       quarantinedBytes: 0,
       restoredBytes: data.restoredBytes,
       purgedBytes: 0,
-      counts: { done: data.items.filter(i => i.status === 'restored').length, skipped: data.items.filter(i => i.status === 'skipped').length },
+      counts: {
+        done: data.items.filter(i => i.status === 'restored').length,
+        skipped: data.items.filter(i => i.status === 'skipped').length,
+      },
       items: joinResults(data.items, known),
       messages: [],
     }
     const fullyRestored = record.counts.skipped === 0
     await saveRun($, record, list => [
       indexEntry(record, runId),
-      ...list.map(e => (e.runId === runId ? { ...e, quarantineState: fullyRestored ? ('restored' as const) : e.quarantineState } : e)),
+      ...list.map(e =>
+        e.runId === runId ? { ...e, quarantineState: fullyRestored ? ('restored' as const) : e.quarantineState } : e,
+      ),
     ])
     const summary = `Restore: ${runSummaryText(record)}`
     await say($, summary)
@@ -266,7 +313,11 @@ export async function purgeRun($: EngineInterface, runId: string): Promise<void>
     if (entry === undefined || entry.quarantineRoot === null || entry.quarantineState === 'purged') {
       return await say($, 'That quarantine run cannot be deleted.')
     }
-    const isYes = await confirm($, `Delete the quarantine of ${entry.startedAt.slice(0, 16).replace('T', ' ')} (${fmtBytes(entry.quarantinedBytes)}) for good? This cannot be undone.`, 'Delete for good')
+    const isYes = await confirm(
+      $,
+      `Delete the quarantine of ${entry.startedAt.slice(0, 16).replace('T', ' ')} (${fmtBytes(entry.quarantinedBytes)}) for good? This cannot be undone.`,
+      'Delete for good',
+    )
     if (!isYes) return await say($, 'Nothing was deleted.')
     await say($, 'Deleting the quarantine run…', 'working')
     const startedAt = new Date().toISOString()

@@ -28,7 +28,9 @@ files.sort()
 const normalize = text => (text.startsWith('﻿') ? text.slice(1) : text).replace(/\r\n/g, '\n')
 const lines = files.map(full => {
   const key = relative(psRoot, full).split(sep).join('/')
-  const hash = createHash('sha256').update(normalize(readFileSync(full, 'utf8')), 'utf8').digest('hex')
+  const hash = createHash('sha256')
+    .update(normalize(readFileSync(full, 'utf8')), 'utf8')
+    .digest('hex')
   return `  '${key}': '${hash}',`
 })
 

@@ -6,12 +6,6 @@
     "name": "Techgramam"
   },
   "license": "SEE LICENSE IN LICENSE",
-  "keywords": [
-    "windows",
-    "storage",
-    "cleanup",
-    "duplicates",
-    "quarantine"
-  ],
+  "keywords": ["windows", "storage", "cleanup", "duplicates", "quarantine"],
   "types": "./types/index.d.ts"
 }

@@ -42,11 +42,7 @@ export const setDashboardLink = (next: { port: number; modToken: string } | null
 
 export const isDashboardRunning = (): boolean => link !== null
 
-async function post(
-  $: EngineInterface,
-  route: string,
-  body: unknown,
-): Promise<{ ok: boolean; text: string }> {
+async function post($: EngineInterface, route: string, body: unknown): Promise<{ ok: boolean; text: string }> {
   const current = link
   if (current === null) return { ok: false, text: '' }
   try {
@@ -77,22 +73,14 @@ export async function pushState($: EngineInterface): Promise<void> {
   const cleanup = CleanupStateSchema.safeParse(await read($, cleanupAtom))
   const log = parseCleanupLog(await readDataJson($, CLEANUP_LOG_FILE))
   const newest = index.entries[0]
-  const latest = inSession.success
-    ? inSession.data
-    : newest === undefined
-      ? undefined
-      : await loadStoredScan($, newest)
+  const latest = inSession.success ? inSession.data : newest === undefined ? undefined : await loadStoredScan($, newest)
   const state: DashboardState = {
     protocolVersion: DASHBOARD_PROTOCOL_VERSION,
     updatedAt: new Date().toISOString(),
     settings,
     settingsProblem: problem,
     latest:
-      latest === undefined
-        ? null
-        : settings.redactPersonalPaths
-          ? { ...redactDeep(latest), isRedacted: true }
-          : latest,
+      latest === undefined ? null : settings.redactPersonalPaths ? { ...redactDeep(latest), isRedacted: true } : latest,
     history: index.entries,
     progress: await read($, progressAtom),
     cleanup: {

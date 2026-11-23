@@ -20,7 +20,13 @@ function world(on: On, files: Files, runs: string[][], opts: World = {}): void {
   const windowsSpelling = (path: string): string => path.replace(/^.*?(?=[A-Za-z]:\\)/, '')
   on('fs.exists', (_, e) => ({ value: files.has(e.path) || [...files.keys()].some(k => k.startsWith(`${e.path}\\`)) }))
   on('fs.stat', (_, e) => ({
-    value: { kind: files.has(e.path) ? 'file' : 'dir', size: 0, mtimeMs: 0, isLink: false, realPath: windowsSpelling(e.path) },
+    value: {
+      kind: files.has(e.path) ? 'file' : 'dir',
+      size: 0,
+      mtimeMs: 0,
+      isLink: false,
+      realPath: windowsSpelling(e.path),
+    },
   }))
   on('fs.read', (_, e) => {
     if (opts.scriptText !== undefined && e.path.endsWith('.ps1')) return { value: opts.scriptText }
@@ -158,7 +164,7 @@ test('Review without a scan asks for one; Settings start with everything off', a
     await ui.press({ key: 'tab-settings' })
     expect((await ui.find({ type: 'Text', text: /Cleanup:/ }))?.text).toContain('off')
     expect((await ui.find({ type: 'Text', text: /Duplicate search/ }))?.text).toContain('off')
-    expect((await ui.find({ type: 'Text', text: /Only you can change these/ }))).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /Only you can change these/ })).toBeDefined()
     await ui.press({ key: 'tab-overview' })
     await ui.unmount()
   }
@@ -182,5 +188,7 @@ test('Claude can read settings and quarantine, never change them', async ($, on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   expect(textOf(await $.tool.call({ tool: 'mcp__drive-cleanup__get_settings' }))).toContain('Cleanup off')
   expect(textOf(await $.tool.call({ tool: 'mcp__drive-cleanup__get_quarantine' }))).toContain('No cleanups yet')
-  expect(textOf(await $.tool.call({ tool: 'mcp__drive-cleanup__get_dev_caches' }))).toContain('There is no deep scan yet')
+  expect(textOf(await $.tool.call({ tool: 'mcp__drive-cleanup__get_dev_caches' }))).toContain(
+    'There is no deep scan yet',
+  )
 })

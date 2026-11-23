@@ -14,14 +14,16 @@ import { loadLatestScan, setLastAuditFolder } from './scan.ts'
 
 const LATEST = 'verify/latest.json'
 
-export type VerifyOutcome = { status: 'ok'; verification: Verification; folder: string } | { status: 'refused'; message: string }
+export type VerifyOutcome =
+  { status: 'ok'; verification: Verification; folder: string } | { status: 'refused'; message: string }
 
 let running = false
 
 const stamp = (iso: string): string => iso.replace(/[-:]/g, '').replace('T', '_').slice(0, 15)
 
 export async function verifyCleanup($: EngineInterface): Promise<VerifyOutcome> {
-  if (running || isCleanupBusy()) return { status: 'refused', message: 'A cleanup or a verification is running. Wait for it to finish.' }
+  if (running || isCleanupBusy())
+    return { status: 'refused', message: 'A cleanup or a verification is running. Wait for it to finish.' }
   running = true
   try {
     const scan = await loadLatestScan($)
@@ -63,7 +65,12 @@ export async function verifyCleanup($: EngineInterface): Promise<VerifyOutcome> 
       freeAfterBytes: freeAfter,
       reportedFreedBytes: records.reduce((s, r) => s + r.deletedBytes + r.quarantinedBytes + r.purgedBytes, 0),
       quarantinedOnSystemDriveBytes: index
-        .filter(e => e.kind === 'cleanup' && e.quarantineState === 'active' && (e.quarantineRoot ?? '').toUpperCase().startsWith(systemDrive))
+        .filter(
+          e =>
+            e.kind === 'cleanup' &&
+            e.quarantineState === 'active' &&
+            (e.quarantineRoot ?? '').toUpperCase().startsWith(systemDrive),
+        )
         .reduce((s, e) => s + e.quarantinedBytes, 0),
       verify,
       verifyDetail,

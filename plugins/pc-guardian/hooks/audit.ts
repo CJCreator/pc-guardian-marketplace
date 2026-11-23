@@ -28,12 +28,7 @@ import {
   withScanScope,
 } from './deps.js'
 import { pushProgress, pushState } from './dashboard-link.ts'
-import {
-  loadHistoryIndex,
-  loadStoredScan,
-  replaceScanInHistory,
-  saveScanToHistory,
-} from './history-store.ts'
+import { loadHistoryIndex, loadStoredScan, replaceScanInHistory, saveScanToHistory } from './history-store.ts'
 import { loadSettings } from './settings-store.ts'
 import { runScript } from './safe-shell.ts'
 
@@ -90,20 +85,12 @@ export const cancelActiveAudit = (): boolean => {
   return true
 }
 
-const errorOf = (
-  code: ToolError['code'],
-  message: string,
-  suggestedAction: string,
-): AuditOutcome => ({
+const errorOf = (code: ToolError['code'], message: string, suggestedAction: string): AuditOutcome => ({
   status: 'error',
   error: { code, message, recoverable: true, suggestedAction },
 })
 
-const BUSY = errorOf(
-  'busy',
-  'A scan is already running.',
-  'Wait for it to finish; the dashboard shows its progress.',
-)
+const BUSY = errorOf('busy', 'A scan is already running.', 'Wait for it to finish; the dashboard shows its progress.')
 
 /**
  * Takes the progress state for a new scan, unless one is running. `update`
@@ -112,8 +99,7 @@ const BUSY = errorOf(
 async function claimProgress($: EngineInterface, start: ScanProgress): Promise<boolean> {
   const claim = { isClaimed: false }
   await update($, progressAtom, current => {
-    const isLive =
-      current?.state === 'running' && start.startedAt - current.startedAt < STALE_RUN_MS
+    const isLive = current?.state === 'running' && start.startedAt - current.startedAt < STALE_RUN_MS
     claim.isClaimed = !isLive
     return isLive ? current : start
   })
@@ -121,10 +107,7 @@ async function claimProgress($: EngineInterface, start: ScanProgress): Promise<b
   return claim.isClaimed
 }
 
-async function setProgress(
-  $: EngineInterface,
-  change: (p: ScanProgress) => ScanProgress,
-): Promise<void> {
+async function setProgress($: EngineInterface, change: (p: ScanProgress) => ScanProgress): Promise<void> {
   await update($, progressAtom, p => (p === null ? p : change(p)))
   await pushProgress($)
 }
@@ -187,14 +170,9 @@ export async function performAudit(
       },
     })
 
-    if (
-      snapshot.machine.status === 'not_checked' &&
-      snapshot.machine.reason === 'unsupported_platform'
-    ) {
+    if (snapshot.machine.status === 'not_checked' && snapshot.machine.reason === 'unsupported_platform') {
       if (isFull) {
-        await setProgress($, p =>
-          finishProgress(p, { state: 'failed', message: 'This is not Windows.' }, Date.now()),
-        )
+        await setProgress($, p => finishProgress(p, { state: 'failed', message: 'This is not Windows.' }, Date.now()))
       }
       return errorOf(
         'unsupported_platform',
@@ -257,11 +235,7 @@ export async function performAudit(
  * the latest scan, which is re-scored, saved in its own history slot and
  * marked "<area> re-checked at <time>". The other areas keep their results.
  */
-export async function recheckArea(
-  $: EngineInterface,
-  category: Category,
-  signal?: AbortSignal,
-): Promise<AuditOutcome> {
+export async function recheckArea($: EngineInterface, category: Category, signal?: AbortSignal): Promise<AuditOutcome> {
   const base = await latestScan($)
   if (base === undefined) {
     return errorOf('not_found', 'There is no scan to re-check.', 'Run a full scan first.')
@@ -305,8 +279,7 @@ export async function recheckArea(
     const { settings } = await loadSettings($)
     const forHistory = toStoredScan(snapshot, score, recommendations, { redactPersonalPaths: true })
     const saved =
-      (await replaceScanInHistory($, forHistory)) ??
-      (await saveScanToHistory($, forHistory, settings.historyRetention))
+      (await replaceScanInHistory($, forHistory)) ?? (await saveScanToHistory($, forHistory, settings.historyRetention))
     await update($, latestScanAtom, () => scan)
     await update($, summaryAtom, () => paneSummary(scan, saved.index))
     await setProgress($, p =>
@@ -362,11 +335,7 @@ async function finishWithError($: EngineInterface, error: unknown): Promise<void
 
 const outcomeOfError = (error: unknown): AuditOutcome =>
   error instanceof AuditCancelledError
-    ? errorOf(
-        'cancelled',
-        'The audit was cancelled before it finished.',
-        'Run it again when you are ready.',
-      )
+    ? errorOf('cancelled', 'The audit was cancelled before it finished.', 'Run it again when you are ready.')
     : errorOf(
         'internal',
         `The audit stopped with an error: ${error instanceof Error ? error.message : String(error)}`,

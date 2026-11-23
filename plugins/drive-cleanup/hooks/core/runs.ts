@@ -46,7 +46,10 @@ export function parseIndex(text: string | undefined): RunIndexEntry[] {
     if (!Array.isArray(list)) return []
     return list.filter(
       (e): e is RunIndexEntry =>
-        typeof e === 'object' && e !== null && typeof (e as RunIndexEntry).runId === 'string' && typeof (e as RunIndexEntry).kind === 'string',
+        typeof e === 'object' &&
+        e !== null &&
+        typeof (e as RunIndexEntry).runId === 'string' &&
+        typeof (e as RunIndexEntry).kind === 'string',
     )
   } catch {
     return []

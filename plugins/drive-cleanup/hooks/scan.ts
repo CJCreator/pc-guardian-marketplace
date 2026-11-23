@@ -198,7 +198,11 @@ async function performScan($: EngineInterface, only: StepId | undefined): Promis
         const written = await writeDataFile($, RAW_FILE[step.id], text)
         if (written.status !== 'written') {
           step.state = 'not_checked'
-          step.notChecked = { status: 'not_checked', reason: 'failed', detail: `Measured but not saved: ${written.detail}` }
+          step.notChecked = {
+            status: 'not_checked',
+            reason: 'failed',
+            detail: `Measured but not saved: ${written.detail}`,
+          }
         } else {
           step.state = 'ok'
           step.notChecked = null
@@ -373,13 +377,21 @@ export function summaryOf(scan: LoadedScan, lastAuditFolder: string | null): DcS
   return {
     scanId: scan.meta.scanId,
     createdAt: scan.meta.createdAt,
-    drive: system === undefined ? null : { letter: system.letter, totalBytes: system.totalBytes, freeBytes: system.freeBytes },
+    drive:
+      system === undefined
+        ? null
+        : { letter: system.letter, totalBytes: system.totalBytes, freeBytes: system.freeBytes },
     recoverable: scan.classified.recoverable,
     top: scan.classified.totals
       .filter(t => t.class !== 'protected')
       .sort((a, b) => b.bytes - a.bytes)
       .slice(0, 4)
-      .map(t => ({ label: CATEGORY_LABEL[t.category], className: CLASS_LABEL[t.class], bytes: t.bytes, count: t.count })),
+      .map(t => ({
+        label: CATEGORY_LABEL[t.category],
+        className: CLASS_LABEL[t.class],
+        bytes: t.bytes,
+        count: t.count,
+      })),
     isPartial: scan.meta.steps.some(s => (s.state !== 'ok' && s.notChecked?.reason !== 'disabled') || s.isTruncated),
     lastAuditFolder,
   }
@@ -393,7 +405,13 @@ export async function setLastAuditFolder($: EngineInterface, folder: string): Pr
   await update($, summaryAtom, current => (current === null ? null : { ...current, lastAuditFolder: folder }))
 }
 
-type HistoryEntry = { scanId: string; createdAt: string; freeBytes: number | null; safeBytes: number; reviewBytes: number }
+type HistoryEntry = {
+  scanId: string
+  createdAt: string
+  freeBytes: number | null
+  safeBytes: number
+  reviewBytes: number
+}
 
 async function recordHistory($: EngineInterface, scan: LoadedScan): Promise<void> {
   let list: HistoryEntry[] = []

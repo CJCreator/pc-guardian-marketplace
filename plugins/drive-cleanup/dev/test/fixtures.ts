@@ -116,10 +116,24 @@ export const walk = (candidates: RawCandidate[] = []): RawWalk => ({
 export const windows = (): RawWindows => ({
   isElevated: false,
   items: [
-    { id: 'update_cache', path: 'C:\\Windows\\SoftwareDistribution\\Download', status: 'ok', bytes: 3 * 1024 ** 3, fileCount: 40, isTruncated: false },
+    {
+      id: 'update_cache',
+      path: 'C:\\Windows\\SoftwareDistribution\\Download',
+      status: 'ok',
+      bytes: 3 * 1024 ** 3,
+      fileCount: 40,
+      isTruncated: false,
+    },
     { id: 'windows_old', path: 'C:\\Windows.old', status: 'missing', bytes: 0, fileCount: 0, isTruncated: false },
     { id: 'hiberfil', path: 'C:\\hiberfil.sys', status: 'ok', bytes: 12 * 1024 ** 3, fileCount: 1, isTruncated: false },
-    { id: 'recycle_bin', path: 'C:\\$Recycle.Bin\\S-1-5-21', status: 'ok', bytes: 500 * 1024 ** 2, fileCount: 20, isTruncated: false },
+    {
+      id: 'recycle_bin',
+      path: 'C:\\$Recycle.Bin\\S-1-5-21',
+      status: 'ok',
+      bytes: 500 * 1024 ** 2,
+      fileCount: 20,
+      isTruncated: false,
+    },
   ],
   hibernation: { isEnabled: true },
   shadowStorage: { status: 'not_checked', usedBytes: 0, maxBytes: 0, detail: 'Needs administrator rights.' },

@@ -1,0 +1,23 @@
+[fmt]
+printWidth = 120
+semi = false
+singleQuote = true
+trailingComma = "all"
+arrowParens = "avoid"
+# Built or hashed bytes are never reformatted: the dashboard and deps.js are
+# bundles (server.mjs is checked by SHA-256, the pages by CSP hash) and the
+# claude-code types are written by Claude Code itself.
+ignorePatterns = [
+  "**/*.md",
+  "plugins/pc-guardian/dashboard/**",
+  "plugins/pc-guardian/hooks/deps.js",
+  "plugins/pc-guardian/hooks/dashboard-hash.ts",
+  "dev/types/**",
+]
+
+[test]
+# Unit tests (node:test API, run by bun's runner). The mod tests in plugins/*/tests
+# need Claude Code's engine and run under `claude plugin test` instead.
+root = "plugins/drive-cleanup/dev/test"
+isolate = true
+randomize = true

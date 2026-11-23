@@ -7,9 +7,7 @@ import { writeDataFile } from './safe-writer.ts'
  * The person's settings in %APPDATA%\pc-guardian-ai\settings\settings.json.
  * A missing or unreadable file means the defaults; it never blocks a scan.
  */
-export async function loadSettings(
-  $: EngineInterface,
-): Promise<{ settings: Settings; problem: string | null }> {
+export async function loadSettings($: EngineInterface): Promise<{ settings: Settings; problem: string | null }> {
   return parseSettings(await readDataJson($, SETTINGS_FILE))
 }
 

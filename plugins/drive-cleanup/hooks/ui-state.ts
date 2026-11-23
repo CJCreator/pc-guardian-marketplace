@@ -5,15 +5,27 @@ import type { DcActivity, DcSelection, DcView } from '../types'
 // The pane's own state: which view is open, what the person selected, and
 // what a cleanup is doing now. Session state only.
 
-const viewAtom = atom({ plugin: 'drive-cleanup', key: 'view' } as const, { name: 'overview', category: null, page: 0 }, {
-  shape: 'view-1',
-})
-const selectionAtom = atom({ plugin: 'drive-cleanup', key: 'selection' } as const, { scanId: '', ids: [] }, {
-  shape: 'selection-1',
-})
-const activityAtom = atom({ plugin: 'drive-cleanup', key: 'activity' } as const, { state: 'idle', message: null }, {
-  shape: 'activity-1',
-})
+const viewAtom = atom(
+  { plugin: 'drive-cleanup', key: 'view' } as const,
+  { name: 'overview', category: null, page: 0 },
+  {
+    shape: 'view-1',
+  },
+)
+const selectionAtom = atom(
+  { plugin: 'drive-cleanup', key: 'selection' } as const,
+  { scanId: '', ids: [] },
+  {
+    shape: 'selection-1',
+  },
+)
+const activityAtom = atom(
+  { plugin: 'drive-cleanup', key: 'activity' } as const,
+  { state: 'idle', message: null },
+  {
+    shape: 'activity-1',
+  },
+)
 
 export async function readView($: EngineInterface): Promise<DcView> {
   return read($, viewAtom)

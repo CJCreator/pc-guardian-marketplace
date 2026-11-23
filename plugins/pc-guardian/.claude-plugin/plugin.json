@@ -6,12 +6,6 @@
     "name": "Techgramam"
   },
   "license": "SEE LICENSE IN LICENSE",
-  "keywords": [
-    "windows",
-    "diagnostics",
-    "audit",
-    "health",
-    "cleanup"
-  ],
+  "keywords": ["windows", "diagnostics", "audit", "health", "cleanup"],
   "types": "./types/index.d.ts"
 }

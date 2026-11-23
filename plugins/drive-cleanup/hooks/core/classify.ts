@@ -264,7 +264,8 @@ const WINDOWS_TEXT: Record<
   windows_old: {
     cls: 'review',
     action: 'manual',
-    reason: 'The previous Windows installation. Removing it ends the option to go back; use Settings > System > Storage > Temporary files > Previous Windows installation(s).',
+    reason:
+      'The previous Windows installation. Removing it ends the option to go back; use Settings > System > Storage > Temporary files > Previous Windows installation(s).',
   },
   windows_temp: {
     cls: 'review',
@@ -340,7 +341,10 @@ function devCacheFindings(raw: RawDevCaches, ctx: ClassifyContext): Finding[] {
         modifiedUtc: cache.lastWriteUtc,
         accessedUtc: null,
         reason: `${spec.label} (${spec.tool}). ${spec.how} ${spec.note}${cache.isRunning ? ` ${spec.tool} is running now: close it before cleaning.` : ''}`,
-        evidence: { rule: `dev_cache_${spec.id}`, values: { bytes: cache.bytes, isRunning: cache.isRunning ? 'yes' : 'no' } },
+        evidence: {
+          rule: `dev_cache_${spec.id}`,
+          values: { bytes: cache.bytes, isRunning: cache.isRunning ? 'yes' : 'no' },
+        },
         confidence: isSafe ? 'high' : 'medium',
         cacheId: spec.id,
       }),
@@ -438,9 +442,7 @@ export function classifyScan(inputs: ScanInputs, ctx: ClassifyContext): Classifi
   if (win !== null) for (const f of windowsFindings(win, ctx)) push(f)
   findings.sort((a, b) => b.bytes - a.bytes)
 
-  const cappedKinds = new Set(
-    (walk?.candidateTotals ?? []).filter(t => t.isCapped).map(t => t.kind as string),
-  )
+  const cappedKinds = new Set((walk?.candidateTotals ?? []).filter(t => t.isCapped).map(t => t.kind as string))
   const capOf: Partial<Record<CategoryId, string>> = {
     installer: 'installer',
     archive: 'archive',

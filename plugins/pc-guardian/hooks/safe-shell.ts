@@ -23,10 +23,11 @@ export type RunScriptOptions = {
 
 const utf8 = new TextEncoder()
 
-const notChecked = (
-  reason: 'failed' | 'timeout' | 'unsupported_platform',
-  detail: string,
-): ScriptRun => ({ status: 'not_checked', reason, detail })
+const notChecked = (reason: 'failed' | 'timeout' | 'unsupported_platform', detail: string): ScriptRun => ({
+  status: 'not_checked',
+  reason,
+  detail,
+})
 
 /**
  * The only place PC Guardian starts a process.
@@ -39,11 +40,7 @@ const notChecked = (
  * the `PCG_*` environment variables its schema allows; no caller text ever
  * reaches the command line.
  */
-export async function runScript(
-  $: EngineInterface,
-  id: ScriptId,
-  options: RunScriptOptions = {},
-): Promise<ScriptRun> {
+export async function runScript($: EngineInterface, id: ScriptId, options: RunScriptOptions = {}): Promise<ScriptRun> {
   return runAllowlisted($, SCRIPTS[id], options)
 }
 
@@ -54,19 +51,11 @@ export async function runScript(
  * mod's cleanup module may call this (ESLint), and only for items the person
  * ticked and confirmed.
  */
-export async function runAction(
-  $: EngineInterface,
-  id: ActionId,
-  params: ScriptParams,
-): Promise<ScriptRun> {
+export async function runAction($: EngineInterface, id: ActionId, params: ScriptParams): Promise<ScriptRun> {
   return runAllowlisted($, ACTIONS[id], { params })
 }
 
-async function runAllowlisted(
-  $: EngineInterface,
-  spec: ScriptSpec,
-  options: RunScriptOptions,
-): Promise<ScriptRun> {
+async function runAllowlisted($: EngineInterface, spec: ScriptSpec, options: RunScriptOptions): Promise<ScriptRun> {
   if (options.signal?.aborted === true) {
     return notChecked('failed', `${spec.file} was not run: the audit was cancelled.`)
   }
@@ -97,28 +86,21 @@ async function runAllowlisted(
   try {
     ran = await $.process.run(argv, { timeoutMs: spec.timeoutMs, env: env.env })
   } catch {
-    return notChecked(
-      'timeout',
-      `${spec.file} did not finish within ${String(spec.timeoutMs / 1000)} s.`,
-    )
+    return notChecked('timeout', `${spec.file} did not finish within ${String(spec.timeoutMs / 1000)} s.`)
   }
 
   if (ran.exitCode !== 0) {
     return notChecked('failed', `${spec.file} exited with code ${String(ran.exitCode)}.`)
   }
   if (ran.isStdoutTruncated || utf8.encode(ran.stdout).length > spec.maxOutputBytes) {
-    return notChecked(
-      'failed',
-      `${spec.file} returned more than ${String(spec.maxOutputBytes / 1024)} KiB of output.`,
-    )
+    return notChecked('failed', `${spec.file} returned more than ${String(spec.maxOutputBytes / 1024)} KiB of output.`)
   }
   return { status: 'ok', stdout: ran.stdout }
 }
 
 export type DashboardProcess = ReturnType<EngineInterface['process']['spawn']>
 
-export type DashboardStart =
-  { status: 'ok'; process: DashboardProcess } | { status: 'unavailable'; detail: string }
+export type DashboardStart = { status: 'ok'; process: DashboardProcess } | { status: 'unavailable'; detail: string }
 
 const MIN_NODE_MAJOR = 22
 
@@ -130,10 +112,7 @@ const MIN_NODE_MAJOR = 22
  * only, never writes a file and never runs anything (apps/dashboard-server,
  * and its tests). It ends when this session's mod unloads.
  */
-export async function startDashboardServer(
-  $: EngineInterface,
-  config: ServerConfig,
-): Promise<DashboardStart> {
+export async function startDashboardServer($: EngineInterface, config: ServerConfig): Promise<DashboardStart> {
   if (DASHBOARD_SERVER_SHA256 === null) {
     return { status: 'unavailable', detail: 'This build of PC Guardian has no browser dashboard.' }
   }
@@ -214,11 +193,7 @@ async function sha256Hex(text: string): Promise<string> {
 }
 
 /** Refuses to run a script whose contents differ from what was built and reviewed. */
-async function verifyScript(
-  $: EngineInterface,
-  scriptPath: string,
-  file: string,
-): Promise<ScriptRun | undefined> {
+async function verifyScript($: EngineInterface, scriptPath: string, file: string): Promise<ScriptRun | undefined> {
   const expected = SCRIPT_HASHES[file]
   if (expected === undefined) {
     return notChecked('failed', `${file} was not run: it has no recorded hash.`)

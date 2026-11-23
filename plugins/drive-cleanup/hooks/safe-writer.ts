@@ -52,11 +52,7 @@ async function checkChain($: EngineInterface, root: string, chain: string[]): Pr
 
 export type WriteResult = { status: 'written'; path: string } | { status: 'refused'; detail: string }
 
-export async function writeDataFile(
-  $: EngineInterface,
-  relative: string,
-  text: string,
-): Promise<WriteResult> {
+export async function writeDataFile($: EngineInterface, relative: string, text: string): Promise<WriteResult> {
   const folder = await dataFolder($)
   if (folder.status !== 'ok') return folder
   const target = resolve(folder.path, relative)

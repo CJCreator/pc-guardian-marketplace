@@ -8,18 +8,11 @@ import {
 } from './deps.js'
 import { cancelActiveAudit, performAudit, recheckArea } from './audit.ts'
 import { previewCleanup, restoreStartup, runCleanup, startCleanupRequest } from './cleanup.ts'
-import {
-  isDashboardRunning,
-  pushNotice,
-  pushState,
-  requestLaunchUrl,
-  setDashboardLink,
-} from './dashboard-link.ts'
+import { isDashboardRunning, pushNotice, pushState, requestLaunchUrl, setDashboardLink } from './dashboard-link.ts'
 import { startDashboardServer, type DashboardProcess } from './safe-shell.ts'
 import { saveSettings } from './settings-store.ts'
 
-export type BrowserDashboard =
-  { status: 'ok'; url: string } | { status: 'unavailable'; detail: string }
+export type BrowserDashboard = { status: 'ok'; url: string } | { status: 'unavailable'; detail: string }
 
 /** How long a starting server may take to say it is ready (well within a hook's budget). */
 const READY_TIMEOUT_MS = 8_000

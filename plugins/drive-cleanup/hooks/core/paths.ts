@@ -54,8 +54,7 @@ export function extensionOf(path: string): string {
   return dot <= 0 ? '' : name.slice(dot).toLowerCase()
 }
 
-const join = (root: string, ...parts: string[]): string =>
-  [root.replace(/[\\/]+$/, ''), ...parts].join('\\')
+const join = (root: string, ...parts: string[]): string => [root.replace(/[\\/]+$/, ''), ...parts].join('\\')
 
 // ------------------------------------------------------------------ rules
 
@@ -88,14 +87,7 @@ const ROOT_SYSTEM_FILES = new Set([
 const SHARED_PROFILES = ['Default', 'Default User', 'Public', 'All Users'] as const
 
 const CREDENTIAL_FOLDERS = new Set(['.ssh', '.gnupg', '.aws', '.azure', '.kube', '.gcloud'])
-const CREDENTIAL_NAMES = new Set([
-  '.npmrc',
-  '.pypirc',
-  '.git-credentials',
-  '.netrc',
-  '_netrc',
-  '.pgpass',
-])
+const CREDENTIAL_NAMES = new Set(['.npmrc', '.pypirc', '.git-credentials', '.netrc', '_netrc', '.pgpass'])
 const CREDENTIAL_EXTENSIONS = new Set([
   '.pem',
   '.key',
@@ -187,9 +179,7 @@ export function protectedBy(path: string, ctx: ClassifyContext, isFolder = false
   if (isUnder(p, ctx.userProfile)) {
     const windowsData = join(ctx.userProfile, 'AppData', 'Local', 'Microsoft', 'Windows')
     if (isUnder(p, windowsData)) {
-      const isException = WINDOWS_PROFILE_EXCEPTIONS.some(parts =>
-        isUnder(p, join(windowsData, ...parts)),
-      )
+      const isException = WINDOWS_PROFILE_EXCEPTIONS.some(parts => isUnder(p, join(windowsData, ...parts)))
       if (!isException) return 'Windows profile data'
     }
     const isEditorCache = EDITOR_DATA.some(name =>

@@ -14,7 +14,13 @@ import { chooseQuarantineRoot, planCleanup, type PlanInput } from '../../hooks/c
 import { finalReport } from '../../hooks/core/reports.ts'
 import { indexEntry, manifestRows, runSummaryText } from '../../hooks/core/runs.ts'
 import { ACTIONS, checkParams, SCRIPTS } from '../../hooks/core/scripts.ts'
-import { DEFAULT_SETTINGS, type Finding, type RawDevCaches, type RawHash, type RunRecord } from '../../hooks/core/types.ts'
+import {
+  DEFAULT_SETTINGS,
+  type Finding,
+  type RawDevCaches,
+  type RawHash,
+  type RunRecord,
+} from '../../hooks/core/types.ts'
 import {
   parseOutput,
   RawApplyCheck,
@@ -34,10 +40,56 @@ const iso = (daysAgo: number): string => new Date(NOW - daysAgo * 86_400_000).to
 
 const devcaches = (): RawDevCaches => ({
   caches: [
-    { id: 'npm_cache', isPresent: true, bytes: 2 * 1024 ** 3, fileCount: 9000, lastWriteUtc: iso(3), isRunning: false, isTruncated: false, roots: [{ path: `${PROFILE}\\AppData\\Local\\npm-cache\\_cacache`, status: 'ok', bytes: 2 * 1024 ** 3, fileCount: 9000 }] },
-    { id: 'vscode_cache', isPresent: true, bytes: 500 * 1024 ** 2, fileCount: 300, lastWriteUtc: iso(1), isRunning: true, isTruncated: false, roots: [{ path: `${PROFILE}\\AppData\\Roaming\\Code\\Cache`, status: 'ok', bytes: 500 * 1024 ** 2, fileCount: 300 }, { path: `${PROFILE}\\AppData\\Roaming\\Code\\logs`, status: 'ok', bytes: 1, fileCount: 1 }] },
-    { id: 'maven_repo', isPresent: true, bytes: 3 * 1024 ** 3, fileCount: 40000, lastWriteUtc: iso(30), isRunning: false, isTruncated: false, roots: [{ path: `${PROFILE}\\.m2\\repository`, status: 'ok', bytes: 3 * 1024 ** 3, fileCount: 40000 }] },
-    { id: 'pip_cache', isPresent: false, bytes: 0, fileCount: 0, lastWriteUtc: null, isRunning: false, isTruncated: false, roots: [{ path: `${PROFILE}\\AppData\\Local\\pip\\cache`, status: 'missing', bytes: 0, fileCount: 0 }] },
+    {
+      id: 'npm_cache',
+      isPresent: true,
+      bytes: 2 * 1024 ** 3,
+      fileCount: 9000,
+      lastWriteUtc: iso(3),
+      isRunning: false,
+      isTruncated: false,
+      roots: [
+        {
+          path: `${PROFILE}\\AppData\\Local\\npm-cache\\_cacache`,
+          status: 'ok',
+          bytes: 2 * 1024 ** 3,
+          fileCount: 9000,
+        },
+      ],
+    },
+    {
+      id: 'vscode_cache',
+      isPresent: true,
+      bytes: 500 * 1024 ** 2,
+      fileCount: 300,
+      lastWriteUtc: iso(1),
+      isRunning: true,
+      isTruncated: false,
+      roots: [
+        { path: `${PROFILE}\\AppData\\Roaming\\Code\\Cache`, status: 'ok', bytes: 500 * 1024 ** 2, fileCount: 300 },
+        { path: `${PROFILE}\\AppData\\Roaming\\Code\\logs`, status: 'ok', bytes: 1, fileCount: 1 },
+      ],
+    },
+    {
+      id: 'maven_repo',
+      isPresent: true,
+      bytes: 3 * 1024 ** 3,
+      fileCount: 40000,
+      lastWriteUtc: iso(30),
+      isRunning: false,
+      isTruncated: false,
+      roots: [{ path: `${PROFILE}\\.m2\\repository`, status: 'ok', bytes: 3 * 1024 ** 3, fileCount: 40000 }],
+    },
+    {
+      id: 'pip_cache',
+      isPresent: false,
+      bytes: 0,
+      fileCount: 0,
+      lastWriteUtc: null,
+      isRunning: false,
+      isTruncated: false,
+      roots: [{ path: `${PROFILE}\\AppData\\Local\\pip\\cache`, status: 'missing', bytes: 0, fileCount: 0 }],
+    },
   ],
 })
 
@@ -55,15 +107,30 @@ const hash = (): RawHash => ({
       sha256: 'a'.repeat(64),
       bytes: 1024 ** 3,
       files: [
-        { path: `${PROFILE}\\Downloads\\movie (1).mp4`, modifiedUtc: iso(10), accessedUtc: iso(10), createdUtc: iso(10) },
+        {
+          path: `${PROFILE}\\Downloads\\movie (1).mp4`,
+          modifiedUtc: iso(10),
+          accessedUtc: iso(10),
+          createdUtc: iso(10),
+        },
         { path: `${PROFILE}\\Videos\\movie.mp4`, modifiedUtc: iso(100), accessedUtc: iso(100), createdUtc: iso(100) },
         { path: `${PROFILE}\\Desktop\\movie - Copy.mp4`, modifiedUtc: iso(5), accessedUtc: iso(5), createdUtc: iso(5) },
       ],
     },
   ],
   folderGroups: [
-    { signature: 'b'.repeat(64), bytes: 500 * 1024 ** 2, fileCount: 20, folders: [`${PROFILE}\\Pictures\\Trip`, `${PROFILE}\\Downloads\\Trip`] },
-    { signature: 'c'.repeat(64), bytes: 100 * 1024 ** 2, fileCount: 5, folders: [`${PROFILE}\\Pictures\\Trip\\Day1`, `${PROFILE}\\Downloads\\Trip\\Day1`] },
+    {
+      signature: 'b'.repeat(64),
+      bytes: 500 * 1024 ** 2,
+      fileCount: 20,
+      folders: [`${PROFILE}\\Pictures\\Trip`, `${PROFILE}\\Downloads\\Trip`],
+    },
+    {
+      signature: 'c'.repeat(64),
+      bytes: 100 * 1024 ** 2,
+      fileCount: 5,
+      folders: [`${PROFILE}\\Pictures\\Trip\\Day1`, `${PROFILE}\\Downloads\\Trip\\Day1`],
+    },
   ],
 })
 
@@ -71,7 +138,9 @@ describe('developer caches (M2)', () => {
   it('the TS table, the scan script and the clean script agree on ids', () => {
     const scanIds = [...ps('scan/dev-caches.ps1').matchAll(/id = '([a-z_]+)'/g)].map(m => m[1]).sort()
     assert.deepEqual(scanIds, DEV_CACHES.map(c => c.id).sort())
-    const cleanIds = [...ps('actions/clean-cache.ps1').matchAll(/^\s{4}([a-z_]+)\s+= @\{ roots/gm)].map(m => m[1]).sort()
+    const cleanIds = [...ps('actions/clean-cache.ps1').matchAll(/^\s{4}([a-z_]+)\s+= @\{ roots/gm)]
+      .map(m => m[1])
+      .sort()
     assert.deepEqual(cleanIds, [...SAFE_CACHE_IDS].sort(), 'clean-cache.ps1 knows exactly the class A caches')
   })
   it('class A caches can be cleaned, class B are manual, absent ones are not listed', () => {
@@ -80,19 +149,28 @@ describe('developer caches (M2)', () => {
     const maven = scan.findings.find(f => f.cacheId === 'maven_repo')
     assert.deepEqual([npm?.class, npm?.action], ['safe', 'delete'])
     assert.deepEqual([maven?.class, maven?.action], ['review', 'manual'])
-    assert.equal(scan.findings.find(f => f.cacheId === 'pip_cache'), undefined)
+    assert.equal(
+      scan.findings.find(f => f.cacheId === 'pip_cache'),
+      undefined,
+    )
     const code = scan.findings.find(f => f.cacheId === 'vscode_cache')
     assert.match(code?.reason ?? '', /running now/)
     assert.equal(code?.protectedBy, null, "VS Code's cache folders are not protected")
   })
-  it("editor settings stay protected while its caches are not", () => {
+  it('editor settings stay protected while its caches are not', () => {
     assert.notEqual(protectedBy(`${PROFILE}\\AppData\\Roaming\\Code\\User\\settings.json`, ctx()), null)
     assert.equal(protectedBy(`${PROFILE}\\AppData\\Roaming\\Code\\CachedData\\x`, ctx()), null)
     assert.equal(protectedBy(`${PROFILE}\\AppData\\Roaming\\Antigravity\\logs\\a.log`, ctx()), null)
   })
   it('a build cache inside a project is offered, other project files are not', () => {
-    const cache = classifyCandidate(candidate({ kind: 'build_cache', path: `${PROFILE}\\src\\shop\\.next\\cache`, isFolder: true, inProject: true }), ctx())
-    const other = classifyCandidate(candidate({ kind: 'large_old', path: `${PROFILE}\\src\\shop\\data.bin`, inProject: true }), ctx())
+    const cache = classifyCandidate(
+      candidate({ kind: 'build_cache', path: `${PROFILE}\\src\\shop\\.next\\cache`, isFolder: true, inProject: true }),
+      ctx(),
+    )
+    const other = classifyCandidate(
+      candidate({ kind: 'large_old', path: `${PROFILE}\\src\\shop\\data.bin`, inProject: true }),
+      ctx(),
+    )
     assert.deepEqual([cache?.category, cache?.action], ['build_cache', 'quarantine'])
     assert.equal(other?.class, 'protected')
   })
@@ -104,14 +182,29 @@ describe('developer caches (M2)', () => {
         leftovers: {
           installedCount: 120,
           folders: [
-            { path: `${PROFILE}\\AppData\\Roaming\\OldTool`, bytes: 300 * 1024 ** 2, fileCount: 10, lastWriteUtc: iso(700), isTruncated: false },
-            { path: `${PROFILE}\\AppData\\Local\\Packages\\X`, bytes: 300 * 1024 ** 2, fileCount: 10, lastWriteUtc: iso(700), isTruncated: false },
+            {
+              path: `${PROFILE}\\AppData\\Roaming\\OldTool`,
+              bytes: 300 * 1024 ** 2,
+              fileCount: 10,
+              lastWriteUtc: iso(700),
+              isTruncated: false,
+            },
+            {
+              path: `${PROFILE}\\AppData\\Local\\Packages\\X`,
+              bytes: 300 * 1024 ** 2,
+              fileCount: 10,
+              lastWriteUtc: iso(700),
+              isTruncated: false,
+            },
           ],
         },
       },
       ctx(),
     )
-    const [a, b] = [scan.findings.find(f => f.path.endsWith('OldTool')), scan.findings.find(f => f.path.endsWith('\\X'))]
+    const [a, b] = [
+      scan.findings.find(f => f.path.endsWith('OldTool')),
+      scan.findings.find(f => f.path.endsWith('\\X')),
+    ]
     assert.deepEqual([a?.category, a?.confidence, a?.action], ['leftover', 'low', 'quarantine'])
     assert.equal(b?.class, 'protected')
   })
@@ -129,7 +222,11 @@ describe('duplicates (M3)', () => {
     const keeper = found.filter(f => f.duplicate?.isSuggestedKeeper)
     assert.equal(keeper.length, 1)
     assert.equal(keeper[0]?.action, 'none')
-    assert.ok(found.filter(f => !f.duplicate?.isSuggestedKeeper).every(f => f.action === 'quarantine' && f.duplicate?.sha256 === 'a'.repeat(64)))
+    assert.ok(
+      found
+        .filter(f => !f.duplicate?.isSuggestedKeeper)
+        .every(f => f.action === 'quarantine' && f.duplicate?.sha256 === 'a'.repeat(64)),
+    )
   })
   it('nested duplicate folders are reported once, at the top', () => {
     const folders = duplicateFindings(hash(), ctx()).filter(f => f.category === 'duplicate_folder')
@@ -137,16 +234,22 @@ describe('duplicates (M3)', () => {
     assert.ok(folders.every(f => f.path.endsWith('Trip')))
   })
   it('a duplicate is not listed again as an old download', () => {
-    const scan = classifyScan(
-      { walk: null, windows: null, hash: hash() },
-      ctx(),
-    )
+    const scan = classifyScan({ walk: null, windows: null, hash: hash() }, ctx())
     const recoverable = scan.recoverable.reviewBytes
-    assert.equal(recoverable, 2 * 1024 ** 3 + 500 * 1024 ** 2, 'two copies of the file and one folder; keepers not counted')
+    assert.equal(
+      recoverable,
+      2 * 1024 ** 3 + 500 * 1024 ** 2,
+      'two copies of the file and one folder; keepers not counted',
+    )
   })
   it('a resumed search merges into the previous one', () => {
     const a = { ...hash(), isTruncated: true, resumeBelowBytes: 1e9 }
-    const b = { ...hash(), groups: [{ ...(hash().groups[0] as RawHash['groups'][number]), sha256: 'd'.repeat(64) }], isTruncated: false, resumeBelowBytes: null }
+    const b = {
+      ...hash(),
+      groups: [{ ...(hash().groups[0] as RawHash['groups'][number]), sha256: 'd'.repeat(64) }],
+      isTruncated: false,
+      resumeBelowBytes: null,
+    }
     const m = mergeHash(a, b)
     assert.equal(m.groups.length, 2)
     assert.equal(m.isTruncated, false)
@@ -174,8 +277,26 @@ const planInput = (over: Partial<PlanInput> = {}): PlanInput => ({
   settings: { ...DEFAULT_SETTINGS, cleanupEnabled: true },
   volume: volume({
     drives: [
-      { letter: 'C:', label: 'OS', fileSystem: 'NTFS', totalBytes: 512 * 1024 ** 3, freeBytes: 80 * 1024 ** 3, isSystem: true, mediaType: 4, healthStatus: 'Healthy' },
-      { letter: 'D:', label: 'Data', fileSystem: 'NTFS', totalBytes: 1024 ** 4, freeBytes: 600 * 1024 ** 3, isSystem: false, mediaType: 3, healthStatus: 'Healthy' },
+      {
+        letter: 'C:',
+        label: 'OS',
+        fileSystem: 'NTFS',
+        totalBytes: 512 * 1024 ** 3,
+        freeBytes: 80 * 1024 ** 3,
+        isSystem: true,
+        mediaType: 4,
+        healthStatus: 'Healthy',
+      },
+      {
+        letter: 'D:',
+        label: 'Data',
+        fileSystem: 'NTFS',
+        totalBytes: 1024 ** 4,
+        freeBytes: 600 * 1024 ** 3,
+        isSystem: false,
+        mediaType: 3,
+        healthStatus: 'Healthy',
+      },
     ],
   }),
   nowMs: NOW,
@@ -190,9 +311,18 @@ describe('approval planning (M4)', () => {
   const maven = fs.find(f => f.cacheId === 'maven_repo') as Finding
 
   it('refuses while cleanup is off, a scan runs, or the scan is old', () => {
-    assert.match(String((planCleanup(planInput({ settings: DEFAULT_SETTINGS, selectedIds: [npm.id] })) as { message: string }).message), /Cleanup is off/)
+    assert.match(
+      String(
+        (planCleanup(planInput({ settings: DEFAULT_SETTINGS, selectedIds: [npm.id] })) as { message: string }).message,
+      ),
+      /Cleanup is off/,
+    )
     assert.equal(planCleanup(planInput({ isScanRunning: true, selectedIds: [npm.id] })).status, 'refused')
-    assert.equal(planCleanup(planInput({ scanFinishedAt: new Date(NOW - 25 * 3_600_000).toISOString(), selectedIds: [npm.id] })).status, 'refused')
+    assert.equal(
+      planCleanup(planInput({ scanFinishedAt: new Date(NOW - 25 * 3_600_000).toISOString(), selectedIds: [npm.id] }))
+        .status,
+      'refused',
+    )
     assert.equal(planCleanup(planInput({ selectedIds: [] })).status, 'refused')
   })
   it('refuses unknown, protected, manual and keeper items', () => {
@@ -204,15 +334,26 @@ describe('approval planning (M4)', () => {
     assert.equal(planCleanup(planInput({ findings: [...fs, prot], selectedIds: ['p'] })).status, 'refused')
   })
   it('never every copy of a duplicate group', () => {
-    const everyCopy = fs.filter(f => f.duplicate?.groupId === dupes[0]?.duplicate?.groupId).map(f => ({ ...f, action: 'quarantine' as const }))
+    const everyCopy = fs
+      .filter(f => f.duplicate?.groupId === dupes[0]?.duplicate?.groupId)
+      .map(f => ({ ...f, action: 'quarantine' as const }))
     const altered = [...fs.filter(f => !everyCopy.some(c => c.id === f.id)), ...everyCopy]
-    assert.match(String((planCleanup(planInput({ findings: altered, selectedIds: everyCopy.map(f => f.id) })) as { message: string }).message), /Keep at least one/)
+    assert.match(
+      String(
+        (planCleanup(planInput({ findings: altered, selectedIds: everyCopy.map(f => f.id) })) as { message: string })
+          .message,
+      ),
+      /Keep at least one/,
+    )
   })
   it('plans caches as jobs, files as items, with the hash and a quarantine on another drive', () => {
     const plan = planCleanup(planInput({ selectedIds: [npm.id, ...dupes.map(d => d.id)] }))
     assert.equal(plan.status, 'ok')
     if (plan.status !== 'ok') return
-    assert.deepEqual(plan.caches.map(c => c.cacheId), ['npm_cache'])
+    assert.deepEqual(
+      plan.caches.map(c => c.cacheId),
+      ['npm_cache'],
+    )
     assert.equal(plan.list.items.length, 2)
     assert.ok(plan.list.items.every(i => i.action === 'quarantine' && i.sha256 === 'a'.repeat(64)))
     assert.equal(plan.list.quarantineRoot, 'D:\\Drive Cleanup Quarantine')
@@ -220,18 +361,57 @@ describe('approval planning (M4)', () => {
   })
   it('chooses a quarantine drive with room, else the system drive, else refuses', () => {
     const v = planInput().volume
-    assert.deepEqual(chooseQuarantineRoot(v, 'auto', 10 * 1024 ** 3), { status: 'ok', root: 'D:\\Drive Cleanup Quarantine', drive: 'D:' })
+    assert.deepEqual(chooseQuarantineRoot(v, 'auto', 10 * 1024 ** 3), {
+      status: 'ok',
+      root: 'D:\\Drive Cleanup Quarantine',
+      drive: 'D:',
+    })
     const full = volume({
       drives: [
-        { letter: 'C:', label: '', fileSystem: 'NTFS', totalBytes: 100 * 1024 ** 3, freeBytes: 30 * 1024 ** 3, isSystem: true, mediaType: 4, healthStatus: null },
-        { letter: 'D:', label: '', fileSystem: 'NTFS', totalBytes: 100 * 1024 ** 3, freeBytes: 12 * 1024 ** 3, isSystem: false, mediaType: 4, healthStatus: null },
+        {
+          letter: 'C:',
+          label: '',
+          fileSystem: 'NTFS',
+          totalBytes: 100 * 1024 ** 3,
+          freeBytes: 30 * 1024 ** 3,
+          isSystem: true,
+          mediaType: 4,
+          healthStatus: null,
+        },
+        {
+          letter: 'D:',
+          label: '',
+          fileSystem: 'NTFS',
+          totalBytes: 100 * 1024 ** 3,
+          freeBytes: 12 * 1024 ** 3,
+          isSystem: false,
+          mediaType: 4,
+          healthStatus: null,
+        },
       ],
     })
     const r = chooseQuarantineRoot(full, 'auto', 5 * 1024 ** 3)
-    assert.deepEqual(r, { status: 'ok', root: 'C:\\Drive Cleanup Quarantine', drive: 'C:' }, 'D: would drop under 10 GB; C: renames in place')
+    assert.deepEqual(
+      r,
+      { status: 'ok', root: 'C:\\Drive Cleanup Quarantine', drive: 'C:' },
+      'D: would drop under 10 GB; C: renames in place',
+    )
     assert.equal(chooseQuarantineRoot(full, 'D:', 5 * 1024 ** 3).status, 'refused')
     assert.equal(chooseQuarantineRoot(full, 'E:', 1).status, 'refused')
-    const fat = volume({ drives: [{ letter: 'E:', label: '', fileSystem: 'exFAT', totalBytes: 1e12, freeBytes: 9e11, isSystem: false, mediaType: null, healthStatus: null }] })
+    const fat = volume({
+      drives: [
+        {
+          letter: 'E:',
+          label: '',
+          fileSystem: 'exFAT',
+          totalBytes: 1e12,
+          freeBytes: 9e11,
+          isSystem: false,
+          mediaType: null,
+          healthStatus: null,
+        },
+      ],
+    })
     assert.equal(chooseQuarantineRoot(fat, 'auto', 1).status, 'refused', 'never a non-NTFS (removable-style) drive')
   })
 })
@@ -240,10 +420,26 @@ describe('action inputs and scripts (M4)', () => {
   it('inputs are checked strictly', () => {
     assert.equal(checkParams(ACTIONS.apply, { DC_RUN_ID: '11111111-2222-3333-4444-555555555555' }).status, 'ok')
     assert.equal(checkParams(ACTIONS.apply, { DC_RUN_ID: '../../evil' }).status, 'refused')
-    assert.equal(checkParams(ACTIONS.apply, { DC_RUN_ID: '11111111-2222-3333-4444-555555555555', X: '1' }).status, 'refused')
-    assert.equal(checkParams(ACTIONS.cleanCache, { DC_CACHE_ID: 'npm_cache; rm', DC_APPROVED_AT: '2026-10-31T00:00:00.000Z' }).status, 'refused')
-    assert.equal(checkParams(ACTIONS.purge, { DC_RUN_ID: '11111111-2222-3333-4444-555555555555', DC_QUARANTINE_ROOT: 'C:\\Windows' }).status, 'refused')
-    assert.equal(checkParams(SCRIPTS.hash, { DC_MIN_BYTES: '1048576', DC_MAX_BYTES: '4294967296', DC_RESUME_BELOW: '0' }).status, 'ok')
+    assert.equal(
+      checkParams(ACTIONS.apply, { DC_RUN_ID: '11111111-2222-3333-4444-555555555555', X: '1' }).status,
+      'refused',
+    )
+    assert.equal(
+      checkParams(ACTIONS.cleanCache, { DC_CACHE_ID: 'npm_cache; rm', DC_APPROVED_AT: '2026-10-31T00:00:00.000Z' })
+        .status,
+      'refused',
+    )
+    assert.equal(
+      checkParams(ACTIONS.purge, {
+        DC_RUN_ID: '11111111-2222-3333-4444-555555555555',
+        DC_QUARANTINE_ROOT: 'C:\\Windows',
+      }).status,
+      'refused',
+    )
+    assert.equal(
+      checkParams(SCRIPTS.hash, { DC_MIN_BYTES: '1048576', DC_MAX_BYTES: '4294967296', DC_RESUME_BELOW: '0' }).status,
+      'ok',
+    )
     assert.equal(checkParams(SCRIPTS.volume, { DC_X: '1' }).status, 'refused')
   })
   it('every action script refuses stale or foreign input before changing anything', () => {
@@ -252,8 +448,15 @@ describe('action inputs and scripts (M4)', () => {
     assert.match(apply, /Get-ProtectedReason/)
     assert.match(apply, /It changed since the scan/)
     assert.match(apply, /Drive Cleanup Quarantine\$/)
-    const code = apply.split('\n').filter(l => !l.trim().startsWith('#')).join('\n')
-    assert.doesNotMatch(code, /Clear-RecycleBin|Remove-Item|Shell\.Application|FileSystem\]::Delete/i, 'never the Recycle Bin, never a recursive Remove-Item')
+    const code = apply
+      .split('\n')
+      .filter(l => !l.trim().startsWith('#'))
+      .join('\n')
+    assert.doesNotMatch(
+      code,
+      /Clear-RecycleBin|Remove-Item|Shell\.Application|FileSystem\]::Delete/i,
+      'never the Recycle Bin, never a recursive Remove-Item',
+    )
     for (const f of ['actions/restore.ps1', 'actions/purge.ps1']) assert.match(ps(f), /restore\.json/)
     assert.match(ps('actions/clean-cache.ps1'), /Get-Process -Name \$owner/)
   })
@@ -278,20 +481,65 @@ describe('validation of M2–M5 output', () => {
     assert.equal(parseOutput(RawDevCachesCheck, JSON.stringify(devcaches()), 'x').status, 'ok')
     assert.equal(parseOutput(RawHashCheck, JSON.stringify(hash()), 'x').status, 'ok')
     assert.equal(parseOutput(RawLeftoversCheck, JSON.stringify({ installedCount: 3, folders: [] }), 'x').status, 'ok')
-    assert.equal(parseOutput(RawVerifyCheck, JSON.stringify({ isElevated: false, tools: [{ id: 'git', status: 'ok', version: '2.45' }], projects: [], quarantine: [] }), 'x').status, 'ok')
-    assert.equal(parseOutput(RawApplyCheck, JSON.stringify({ status: 'refused', reason: 'stale', detail: 'old' }), 'x').status, 'ok')
-    const ok = { status: 'ok', runId: 'r', quarantineDir: null, deletedBytes: 1, quarantinedBytes: 0, isTruncated: false, items: { id: 'a', status: 'deleted', detail: '', destination: null, sha256: null, bytes: 1 } }
+    assert.equal(
+      parseOutput(
+        RawVerifyCheck,
+        JSON.stringify({
+          isElevated: false,
+          tools: [{ id: 'git', status: 'ok', version: '2.45' }],
+          projects: [],
+          quarantine: [],
+        }),
+        'x',
+      ).status,
+      'ok',
+    )
+    assert.equal(
+      parseOutput(RawApplyCheck, JSON.stringify({ status: 'refused', reason: 'stale', detail: 'old' }), 'x').status,
+      'ok',
+    )
+    const ok = {
+      status: 'ok',
+      runId: 'r',
+      quarantineDir: null,
+      deletedBytes: 1,
+      quarantinedBytes: 0,
+      isTruncated: false,
+      items: { id: 'a', status: 'deleted', detail: '', destination: null, sha256: null, bytes: 1 },
+    }
     const parsed = parseOutput(RawApplyCheck, JSON.stringify(ok), 'x')
     assert.equal(parsed.status, 'ok', JSON.stringify(parsed))
-    assert.equal(parseOutput(RawCacheCleanCheck, JSON.stringify({ status: 'ok', removedCount: 1, removedBytes: 2, skippedCount: 0 }), 'x').status, 'ok')
-    assert.equal(parseOutput(RawPurgeCheck, JSON.stringify({ status: 'ok', runId: 'r', removedCount: 1, removedBytes: 2, failedCount: 0 }), 'x').status, 'ok')
+    assert.equal(
+      parseOutput(
+        RawCacheCleanCheck,
+        JSON.stringify({ status: 'ok', removedCount: 1, removedBytes: 2, skippedCount: 0 }),
+        'x',
+      ).status,
+      'ok',
+    )
+    assert.equal(
+      parseOutput(
+        RawPurgeCheck,
+        JSON.stringify({ status: 'ok', runId: 'r', removedCount: 1, removedBytes: 2, failedCount: 0 }),
+        'x',
+      ).status,
+      'ok',
+    )
   })
   it('refuses a bad hash and an unknown item status', () => {
     const bad = hash()
     const g = bad.groups[0]
     if (g !== undefined) g.sha256 = 'not-a-hash'
     assert.equal(parseOutput(RawHashCheck, JSON.stringify(bad), 'x').status, 'not_checked')
-    const item = { status: 'ok', runId: 'r', quarantineDir: null, deletedBytes: 1, quarantinedBytes: 0, isTruncated: false, items: [{ id: 'a', status: 'wiped', detail: '', destination: null, sha256: null, bytes: 1 }] }
+    const item = {
+      status: 'ok',
+      runId: 'r',
+      quarantineDir: null,
+      deletedBytes: 1,
+      quarantinedBytes: 0,
+      isTruncated: false,
+      items: [{ id: 'a', status: 'wiped', detail: '', destination: null, sha256: null, bytes: 1 }],
+    }
     assert.equal(parseOutput(RawApplyCheck, JSON.stringify(item), 'x').status, 'not_checked')
   })
 })
@@ -300,8 +548,18 @@ describe('settings, runs and reports (M4–M5)', () => {
   it('settings default to off and ignore bad values', () => {
     assert.deepEqual(parseSettings(undefined), DEFAULT_SETTINGS)
     assert.deepEqual(parseSettings('not json'), DEFAULT_SETTINGS)
-    const s = parseSettings(JSON.stringify({ cleanupEnabled: 'yes', duplicatesEnabled: true, quarantineDrive: 'C:\\x', minDuplicateBytes: -1 }))
-    assert.deepEqual([s.cleanupEnabled, s.duplicatesEnabled, s.quarantineDrive, s.minDuplicateBytes], [false, true, 'auto', DEFAULT_SETTINGS.minDuplicateBytes])
+    const s = parseSettings(
+      JSON.stringify({
+        cleanupEnabled: 'yes',
+        duplicatesEnabled: true,
+        quarantineDrive: 'C:\\x',
+        minDuplicateBytes: -1,
+      }),
+    )
+    assert.deepEqual(
+      [s.cleanupEnabled, s.duplicatesEnabled, s.quarantineDrive, s.minDuplicateBytes],
+      [false, true, 'auto', DEFAULT_SETTINGS.minDuplicateBytes],
+    )
   })
   const record: RunRecord = {
     runId: 'r1',
@@ -317,8 +575,30 @@ describe('settings, runs and reports (M4–M5)', () => {
     purgedBytes: 0,
     counts: { done: 2, skipped: 1 },
     items: [
-      { id: 'a', status: 'quarantined', detail: '', destination: 'D:\\Drive Cleanup Quarantine\\r1\\C\\x.exe', sha256: 'a'.repeat(64), bytes: 1024 ** 3, path: 'C:\\x.exe', category: 'installer', reason: '=cmd|calc', action: 'quarantine' },
-      { id: 'b', status: 'skipped', detail: 'It is in use.', destination: null, sha256: null, bytes: 0, path: 'C:\\y.log', category: 'app_logs', reason: 'old', action: 'delete' },
+      {
+        id: 'a',
+        status: 'quarantined',
+        detail: '',
+        destination: 'D:\\Drive Cleanup Quarantine\\r1\\C\\x.exe',
+        sha256: 'a'.repeat(64),
+        bytes: 1024 ** 3,
+        path: 'C:\\x.exe',
+        category: 'installer',
+        reason: '=cmd|calc',
+        action: 'quarantine',
+      },
+      {
+        id: 'b',
+        status: 'skipped',
+        detail: 'It is in use.',
+        destination: null,
+        sha256: null,
+        bytes: 0,
+        path: 'C:\\y.log',
+        category: 'app_logs',
+        reason: 'old',
+        action: 'delete',
+      },
     ],
     messages: [],
   }
@@ -342,7 +622,10 @@ describe('settings, runs and reports (M4–M5)', () => {
       quarantinedOnSystemDriveBytes: 0,
       verify: {
         isElevated: false,
-        tools: [{ id: 'git', status: 'ok', version: '2.45.1' }, { id: 'antigravity', status: 'not_found', version: '' }],
+        tools: [
+          { id: 'git', status: 'ok', version: '2.45.1' },
+          { id: 'antigravity', status: 'not_found', version: '' },
+        ],
         projects: [{ path: `${PROFILE}\\src\\shop`, exists: true, hasGit: true }],
         quarantine: [{ runId: 'r1', checked: 2, matched: 1, missing: 0, mismatched: 1 }],
       },
