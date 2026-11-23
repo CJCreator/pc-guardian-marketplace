@@ -140,7 +140,7 @@ export const TOOL_SPECS: Record<ToolName, { description: string; inputSchema: Re
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
   propose_cleanup: {
-    description: `Proposes a cleanup of findings from the latest deep scan and asks the person ONCE, in Claude Code's own dialog, showing the real totals and largest items: Clean (or Turn on and clean, when cleanup is off), Show the list (selects the items in the pane's Review for the person to change), or Cancel. Nothing changes unless they answer Clean. Name findingIds from get_findings, or categories and/or classes (safe, review) to take every matching item, largest first; maxBytes caps the total. Protected items, a duplicate group's copy to keep and anything Drive Cleanup does not clean are refused. Class A (safe) items are deleted; class B (review) items are moved to a restorable quarantine. At most ${String(MAX_PROPOSAL_ITEMS)} items. elevatedTasks adds Windows cleanup that needs administrator rights (see get_windows_recommendations for each task's size, effect and undo): after the person answers Clean, Windows asks them again (UAC); if they decline there, those tasks are skipped and the rest still runs. Report the result exactly as returned; if the person declines, do not propose again unless they ask.`,
+    description: `Proposes a cleanup of findings from the latest deep scan and asks the person ONCE, in Claude Code's own dialog, showing the real totals and largest items: Clean (or Turn on and clean, when cleanup is off), Show the list (selects the items in the pane's Choose items tab for the person to change), or Cancel. Nothing changes unless they answer Clean. Name findingIds from get_findings, or categories and/or classes (safe, review) to take every matching item, largest first; maxBytes caps the total. Protected items, a duplicate group's copy to keep and anything Drive Cleanup does not clean are refused. Class A (safe) items are deleted; class B (review) items are moved to a restorable quarantine. At most ${String(MAX_PROPOSAL_ITEMS)} items. elevatedTasks adds Windows cleanup that needs administrator rights (see get_windows_recommendations for each task's size, effect and undo): after the person answers yes, Windows asks them again (UAC); if they decline there, those tasks are skipped and the rest still runs. Report the result exactly as returned; if the person declines, do not propose again unless they ask.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -165,7 +165,7 @@ export const TOOL_SPECS: Record<ToolName, { description: string; inputSchema: Re
   },
   open_pane: {
     description:
-      'Opens the Drive Cleanup pane beside the chat: scan progress, recoverable space, and the Review, Quarantine and Settings views where the person selects, approves, restores and configures. Opening it changes nothing.',
+      'Opens the Drive Cleanup pane beside the chat: scan progress, recoverable space, and the Choose items, Undo and Settings tabs where the person selects, approves, restores and configures. Opening it changes nothing.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
 }
@@ -510,7 +510,7 @@ async function quarantine($: EngineInterface): Promise<Answer> {
   const active = index.filter(e => e.kind === 'cleanup' && e.quarantineState === 'active')
   const held = active.reduce((s, e) => s + e.quarantinedBytes, 0)
   return answer(
-    `${String(index.length)} runs recorded; ${String(active.length)} quarantine runs hold ${sizeText(held)}. restore_quarantine puts a run back (the person confirms); deleting one for good is done by the person in the pane (Quarantine).`,
+    `${String(index.length)} runs recorded; ${String(active.length)} quarantine runs hold ${sizeText(held)}. restore_quarantine puts a run back (the person confirms); deleting one for good is done by the person in the pane (Undo tab).`,
     index
       .slice(0, 50)
       // oxlint-disable-next-line oxc/no-map-spread -- 50 rows at most; mutating would change the stored run index

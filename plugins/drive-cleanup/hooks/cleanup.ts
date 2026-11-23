@@ -1,8 +1,9 @@
 import type { EngineInterface } from 'claude-code'
-import { ELEVATED_TASKS, elevatedSummary, type ElevatedTaskId } from './core/elevated.ts'
+import { ELEVATED_TASKS, elevatedEstimate, elevatedSummary, type ElevatedTaskId } from './core/elevated.ts'
 import { MAX_SCAN_AGE_HOURS, planCleanup, type Plan } from './core/plan.ts'
 import {
-  ANSWERS,
+  answers,
+  freedEstimate,
   DECLINE_COOLDOWN_MS,
   proposalQuestion,
   selectForProposal,
@@ -49,7 +50,7 @@ export const isCleanupBusy = (): boolean => busy
 
 async function confirm($: EngineInterface, question: string, yes: string): Promise<boolean> {
   try {
-    const answer = await $.ui.ask(question, { header: 'Drive Cleanup', options: [yes, 'Cancel'] })
+    const answer = await $.ui.ask(question, { header: 'Drive Cleanup', options: [yes, 'Not now'] })
     return answer === yes
   } catch {
     return false
@@ -154,7 +155,7 @@ async function exclusive($: EngineInterface, work: () => Promise<CleanOutcome>):
   try {
     return await work()
   } catch {
-    const message = 'The cleanup stopped unexpectedly. Check the manifest and the Quarantine view.'
+    const message = 'The cleanup stopped unexpectedly. Check the Undo tab and the manifest.'
     await say($, message)
     return { status: 'refused', message }
   } finally {
@@ -174,10 +175,16 @@ export async function cleanSelected($: EngineInterface): Promise<void> {
     const runId = crypto.randomUUID()
     const first = planFor(scan, selection.ids, settings, runId)
     if (first.status !== 'ok') return { status: 'refused', message: first.message }
+    const plan = {
+      deleteBytes: first.deleteBytes,
+      quarantineBytes: first.quarantineBytes,
+      quarantineRoot: first.list.quarantineRoot,
+      systemDrive: scan.ctx.systemDrive,
+    }
     const isYes = await confirm(
       $,
-      `Clean ${String(first.itemCount)} selected items? ${first.summary} Items moved to quarantine can be restored; deleted caches and temporary files cannot.`,
-      'Clean',
+      proposalQuestion({ findings: scan.classified.findings, ids: selection.ids, plan, isCleanupOn: true }),
+      answers(freedEstimate(plan, 0)).yes,
     )
     if (!isYes) return { status: 'cancelled', message: 'Nothing was changed.' }
     return await act($, scan, selection.ids, runId)
@@ -190,7 +197,7 @@ let declinedAt = Number.NEGATIVE_INFINITY
 /**
  * Claude's proposal (propose_cleanup): checked by the same planner, then one
  * question to the person. Clean acts; Show the list puts the items in the
- * pane's Review for the person to change; Cancel, a dismissed dialog or no one
+ * pane's Choose items tab for the person to change; Cancel, a dismissed dialog or no one
  * to ask changes nothing, and refuses new proposals for a while.
  */
 export async function proposeCleanup($: EngineInterface, input: ProposalInput): Promise<CleanOutcome> {
@@ -208,32 +215,36 @@ export async function proposeCleanup($: EngineInterface, input: ProposalInput): 
     const settings = await loadSettings($)
     const runId = crypto.randomUUID()
     // Planned as if cleanup were on, so the person sees the real plan before deciding to turn it on.
-    let summary = ''
+    const plan = { deleteBytes: 0, quarantineBytes: 0, quarantineRoot: '', systemDrive: scan.ctx.systemDrive }
     if (picked.ids.length > 0) {
       const preview = planFor(scan, picked.ids, { ...settings, cleanupEnabled: true }, runId)
       if (preview.status !== 'ok') return { status: 'refused', message: preview.message }
-      summary = preview.summary
+      plan.deleteBytes = preview.deleteBytes
+      plan.quarantineBytes = preview.quarantineBytes
+      plan.quarantineRoot = preview.list.quarantineRoot
     } else {
       const fresh = checkFreshness(scan)
       if (fresh !== null) return { status: 'refused', message: fresh }
     }
-    const yes = settings.cleanupEnabled ? ANSWERS.clean : ANSWERS.turnOnAndClean
+    const elevatedBytes = elevatedEstimate(picked.elevated, scan.windows)
+    const choice = answers(freedEstimate(plan, elevatedBytes))
     let answer = ''
     try {
       answer = await $.ui.ask(
         proposalQuestion({
           findings: scan.classified.findings,
           ids: picked.ids,
-          summary,
+          plan,
           isCleanupOn: settings.cleanupEnabled,
           elevatedLine: elevatedSummary(picked.elevated, scan.windows),
+          elevatedBytes,
         }),
-        { header: 'Drive Cleanup', options: [yes, ANSWERS.review, ANSWERS.cancel] },
+        { header: 'Drive Cleanup', options: [choice.yes, choice.review, choice.cancel] },
       )
     } catch {
       answer = ''
     }
-    if (answer === ANSWERS.review) {
+    if (answer === choice.review) {
       if (picked.ids.length === 0) {
         declinedAt = Date.now()
         return { status: 'cancelled', message: 'There is no file list for administrator tasks. Nothing was changed.' }
@@ -243,10 +254,10 @@ export async function proposeCleanup($: EngineInterface, input: ProposalInput): 
       await $.ui.open({ id: PANE_ID, title: 'Drive Cleanup' })
       return {
         status: 'review',
-        message: `The ${String(picked.ids.length)} proposed items are selected in the Drive Cleanup pane (Review). The person changes the selection and presses Clean selected there; nothing was changed yet.${picked.elevated.length > 0 ? ' The administrator tasks were not started; propose them again on their own if the person wants them.' : ''}`,
+        message: `The ${String(picked.ids.length)} proposed items are selected in the Drive Cleanup pane (Choose items tab). The person changes the selection and presses Clean selected there; nothing was changed yet.${picked.elevated.length > 0 ? ' The administrator tasks were not started; propose them again on their own if the person wants them.' : ''}`,
       }
     }
-    if (answer !== yes) {
+    if (answer !== choice.yes) {
       declinedAt = Date.now()
       return { status: 'cancelled', message: 'The person did not approve. Nothing was changed.' }
     }
@@ -389,7 +400,11 @@ async function act(
   invalidateScan()
   const after = await loadLatestScan($)
   if (after !== undefined) await refreshSummary($, after)
-  const summary = `Cleanup: ${runSummaryText(record)}${messages.length > 0 ? ` ${messages.join(' ')}` : ''} Use Verify to check the result.`
+  const undo =
+    record.quarantinedBytes > 0
+      ? ' Changed your mind? /drive-cleanup:undo-cleanup, or the Undo tab in the pane, puts files back.'
+      : ''
+  const summary = `Done: ${runSummaryText(record)}${messages.length > 0 ? ` ${messages.join(' ')}` : ''}${undo}`
   await say($, summary)
   $.ui.toast(summary)
   return { status: 'done', record, message: summary }

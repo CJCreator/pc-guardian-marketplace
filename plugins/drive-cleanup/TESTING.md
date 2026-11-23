@@ -106,10 +106,10 @@ Recreate the fixture folder (§2) and run a new deep scan first.
 
 | # | Do | Expect |
 | --- | --- | --- |
-| 6.1 | With cleanup **off** in Settings, `/drive-cleanup:free-space` | Claude scans if needed, says what it proposes, then **one** dialog: "Cleanup is off; …", the totals, the largest items, with Turn on and clean / Show the list / Cancel. |
-| 6.2 | Answer **Cancel** | "Nothing was changed"; cleanup still off; fixture files untouched. Ask Claude to propose again at once: it refuses ("declined … a few minutes ago"). |
-| 6.3 | After 5 minutes, `/drive-cleanup:free-space` again, answer **Show the list** | Pane opens on Review with the proposed items ticked; nothing moved. |
-| 6.4 | `/drive-cleanup:free-space 1 GB` and answer **Turn on and clean** | Cleanup turns on; only items up to about 1 GB are cleaned; Claude reports deleted and quarantined sizes, skips with reasons, and runs Verify (free space before and after). |
+| 6.1 | With cleanup **off** in Settings, `/drive-cleanup:free-space` | Claude scans if needed, says what it proposes, then **one** plain dialog: "Free up about … on C:?", what is deleted, what is moved (and that it can be put back), the biggest items, "Cleanup is turned off now; this answer also turns it on", with **Free N GB** / **Let me choose** / **Not now**. No jargon (class A/B, SHA-256, UAC). |
+| 6.2 | Answer **Not now** | "Nothing was changed"; cleanup still off; fixture files untouched. Ask Claude to propose again at once: it refuses ("declined … a few minutes ago"). |
+| 6.3 | After 5 minutes, `/drive-cleanup:free-space` again, answer **Let me choose** | Pane opens on **Choose items** with the proposed items ticked; nothing moved. |
+| 6.4 | `/drive-cleanup:free-space 1 GB` and answer **Free … GB** | Cleanup turns on; only items up to about 1 GB are cleaned; Claude reports deleted and quarantined sizes, skips with reasons, and runs Verify (free space before and after). |
 | 6.5 | Ask Claude to clean `C:\Windows\notepad.exe` or a file in `.ssh` | Refused before any dialog: protected / not in the scan. |
 | 6.6 | `/drive-cleanup:undo-cleanup` and answer **Restore** | Quarantined fixture files back in place; compare with `Get-FileHash`. |
 | 6.7 | `claude -p "free up space on my C drive with drive cleanup"` | Claude proposes; no one can answer, so nothing changes, and it says so. |
@@ -121,9 +121,9 @@ Do this on a VM with a snapshot. Run `/drive-cleanup:free-space` first so there 
 
 | # | Do | Expect |
 | --- | --- | --- |
-| 7.1 | Ask "clean Windows temp and memory dumps too" | The dialog lists files (if any) and "Needs administrator, so Windows will ask you once more: Windows Temp folder (about …); System memory dumps (…)". |
-| 7.2 | Answer Clean, then **No** at UAC | File part done; Claude reports "Windows did not get permission … Administrator tasks were not done." Nothing in `C:\Windows\Temp` changed. |
-| 7.3 | Again (after 5 min), Clean, then **Yes** at UAC | Old files in `C:\Windows\Temp` gone, newer and in-use ones kept; dumps gone; sizes reported; both tasks in `deletion_manifest.csv` with action `elevated`. |
+| 7.1 | Ask "clean Windows temp and memory dumps too" | The dialog lists files (if any) and "Clean Windows itself: Windows Temp folder (about …); System memory dumps (…). Windows will then show a \"Windows PowerShell\" permission prompt…". |
+| 7.2 | Answer **Free … GB**, then **No** at the Windows PowerShell permission prompt | File part done; Claude reports "Windows did not get permission … Administrator tasks were not done." Nothing in `C:\Windows\Temp` changed. |
+| 7.3 | Again (after 5 min), **Free … GB**, then **Yes** at the permission prompt | Old files in `C:\Windows\Temp` gone, newer and in-use ones kept; dumps gone; sizes reported; both tasks in `deletion_manifest.csv` with action `elevated`. |
 | 7.4 | Propose `windows_update_cache` while Windows Update is installing (TiWorker running) | Task skipped with "Windows is installing updates now"; `wuauserv` still running afterwards (`Get-Service wuauserv`). |
 | 7.5 | Propose `windows_update_cache` when idle | `SoftwareDistribution\Download` emptied; `wuauserv` running again if it was before. |
 | 7.6 | Propose `component_store` | Takes minutes; reports freed space; `Dism /Online /Cleanup-Image /AnalyzeComponentStore` afterwards shows no cleanup recommended. Installed updates can still be uninstalled. |
@@ -131,6 +131,15 @@ Do this on a VM with a snapshot. Run `/drive-cleanup:free-space` first so there 
 | 7.8 | Tamper test: after the dialog's Clean and **before** answering UAC, edit one character of `ps\actions\elevated.ps1` in the plugin cache, then answer Yes | The elevated run refuses: "elevated.ps1 does not match its recorded fingerprint"; nothing deleted. Reinstall the plugin afterwards. |
 | 7.9 | As a standard user, answer UAC with an administrator's credentials | Works; the result is written to the standard user's `%APPDATA%\techgramam-drive-cleanup\elevated\`. |
 | 7.10 | `claude -p "clean memory dumps with drive cleanup"` | No dialog can be answered: nothing runs, no UAC prompt appears. |
+
+## 8. Plain language and one-press cleaning (1.3)
+
+| # | Do | Expect |
+| --- | --- | --- |
+| 8.1 | Open the pane after a scan | Overview says "Safe to clean: … (caches and temporary files; apps rebuild them)" and "Worth a look: … (your old files; moved to quarantine, so you can undo)". Tabs: Overview, Choose items, Undo, Settings. |
+| 8.2 | With cleanup off, press **Clean safe items (…)** | First "Turn on cleanup?", then one plain confirmation; only caches and temporary files are cleaned. |
+| 8.3 | After a cleanup that quarantined files | The message ends "Changed your mind? /drive-cleanup:undo-cleanup, or the Undo tab in the pane, puts files back." |
+| 8.4 | `/drive-cleanup:free-space` end to end | Claude's plan and result follow the skill's templates: sizes in GB, no class A/B, no paths except the three biggest, free space before and after. |
 
 ## Clean up after testing
 

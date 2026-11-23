@@ -10,7 +10,7 @@ The person wants space back with as little effort as possible. Do the work; ask 
 
 ## Steps
 
-1. **Scan.** If there is no deep scan from the last hour, call `run_deep_scan`. Pass `includeDuplicates: true` only when the person mentioned duplicates or the target is not met without them (it asks the person, because it reads file contents).
+1. **Scan.** If there is no deep scan from the last hour, say in one line "Scanning your C: drive; this takes a few minutes and changes nothing.", then call `run_deep_scan`. Pass `includeDuplicates: true` only when the person mentioned duplicates or the target is not met without them (it asks the person, because it reads file contents).
 2. **Read what is there.** `get_storage_summary`, then `get_findings` for `class: safe` and for `class: review` (largest first), and `get_dev_caches`. Skip any category that is tiny (under 100 MB in total) unless it is the person's focus.
 3. **Choose.** Build one proposal:
    - Take **all class A (safe)** findings: re-creatable caches, old Temp folders, crash dumps, old logs. Use `classes: ["safe"]`.
@@ -18,13 +18,40 @@ The person wants space back with as little effort as possible. Do the work; ask 
    - Leave out large old personal files, documents, media and anything whose reason you would not defend to the person. Age, size or name alone never make a file unnecessary.
    - If the person gave a target ("20 GB"), use `maxBytes` and stop once it is met.
    - **Administrator tasks** (`elevatedTasks`), from `get_windows_recommendations` → `adminTasks`: add `windows_temp`, `memory_dumps` and `windows_update_cache` when each is over about 500 MB, and `delivery_optimization`. Add `component_store` only when the person wants the most space or the target is not met (it takes 10-30 minutes). Add `hibernation_reduce` only if the person agrees to change a setting. Windows will ask the person for administrator permission after they answer Clean; say so before proposing.
-4. **Propose once.** Before calling, say in two or three lines what you are proposing and why, by category with sizes. Then call `propose_cleanup` once. It shows the person the real totals and the largest items and asks them; you do not ask in chat as well.
+4. **Propose once.** Before calling, show a short plan (template below). Then call `propose_cleanup` once. A dialog shows the person the real totals and asks them; do not ask in chat as well. If it is refused because the scan is too old, run `run_deep_scan` and propose again once.
 5. **Report exactly what came back.**
    - **Done:** what was deleted and quarantined, what each administrator task freed, what was skipped and why. If Windows' permission prompt was declined, say the administrator tasks were not done and the rest was. Then call `verify_cleanup` and give free space before and after.
-   - **Show the list:** the items are selected in the pane's Review; tell the person to adjust and press Clean selected there.
+   - **Show the list:** the items are ticked in the pane's Choose items tab; tell the person to adjust and press Clean selected there.
    - **Declined:** say nothing was changed. Do not propose again unless they ask.
    - **Refused:** give the reason (for example, the scan is too old, or no drive has room for the quarantine) and the fix.
 6. **What Drive Cleanup does not clean.** In one short list: what stays manual from `get_windows_recommendations` (Windows.old, restore points, with the Settings path), manual developer caches (with the command for the person to run), and, if PC Guardian is installed, what `get_cleanup_preview` shows for the Recycle Bin and browser caches (cleaned from PC Guardian's dashboard).
+
+## How to talk to the person
+
+Write for someone who is not technical. Use the person's words, sizes in GB (MB under 1 GB), and short lines.
+
+- Say "caches and temporary files" (apps rebuild them), "your old files" (installers, archives, downloads), "quarantine" only with "you can put them back", and "Windows itself" for the administrator tasks.
+- Never say class A/B, findings, ids, categories, SHA-256, UAC, DISM or wuauserv. "Windows will ask for administrator permission" is enough.
+- No paths unless the person asks, except the three biggest items.
+
+Plan, before proposing:
+
+> **C: has 12 GB free of 476 GB.** I can free about **21 GB**:
+> - 14.2 GB of caches and temporary files (apps rebuild them)
+> - 4.1 GB of old installers and archives, moved to quarantine on D: (you can put them back)
+> - 3.0 GB from Windows itself (Windows will ask for administrator permission)
+>
+> I'll ask you once before anything changes.
+
+Result, after a cleanup:
+
+> **Done. C: now has 33 GB free (was 12 GB).**
+> - Deleted 14.2 GB of caches and temporary files
+> - Moved 4.1 GB to quarantine on D:. Changed your mind? `/drive-cleanup:undo-cleanup`
+> - Windows itself: 2.8 GB
+> - 3 items were left alone because they were in use.
+>
+> Still taking space, and how to handle it yourself: (one short list, only if worth it)
 
 ## Rules
 

@@ -16,13 +16,21 @@ import {
   checkLaunch,
   checkTasks,
   ELEVATED_TASK_IDS,
+  elevatedEstimate,
   elevatedSummary,
   encodeCommand,
   estimateBytes,
   launcherScript,
   type ElevatedLaunch,
 } from '../../hooks/core/elevated.ts'
-import { isActionable, MAX_PROPOSAL_ITEMS, proposalQuestion, selectForProposal } from '../../hooks/core/propose.ts'
+import {
+  answers,
+  freedEstimate,
+  isActionable,
+  MAX_PROPOSAL_ITEMS,
+  proposalQuestion,
+  selectForProposal,
+} from '../../hooks/core/propose.ts'
 import { finalReport } from '../../hooks/core/reports.ts'
 import { indexEntry, manifestRows, runSummaryText } from '../../hooks/core/runs.ts'
 import { ACTIONS, checkParams, SCRIPTS } from '../../hooks/core/scripts.ts'
@@ -623,7 +631,10 @@ describe('settings, runs and reports (M4–M5)', () => {
   })
   it('index entries and summaries', () => {
     assert.equal(indexEntry(record).quarantineState, 'active')
-    assert.match(runSummaryText(record), /moved 1\.0 GB to quarantine, deleted 2\.0 GB; 1 skipped/)
+    assert.equal(
+      runSummaryText(record),
+      'Deleted 2.0 GB of caches and temporary files, moved 1.0 GB of your files to quarantine. 1 item was left alone (in use, changed since the scan, or protected).',
+    )
   })
   it('the final report states space, checks and what was not checked', () => {
     const text = finalReport({
@@ -710,16 +721,48 @@ describe('one-confirm proposals (§19)', () => {
     assert.equal(planCleanup(planInput({ selectedIds: ids })).status, 'ok')
     assert.equal(planCleanup(planInput({ selectedIds: ids, isScanRunning: true })).status, 'refused')
   })
-  it('the question shows the real totals and largest items, and says when cleanup is off', () => {
+  it('the question is plain: what is freed, what is deleted, what can come back, the biggest items', () => {
     const ids = (selectForProposal(fs, { categories: ['duplicate'] }) as { ids: string[] }).ids
-    const plan = planCleanup(planInput({ selectedIds: ids })) as { summary: string }
+    const p = planCleanup(planInput({ selectedIds: ids })) as {
+      deleteBytes: number
+      quarantineBytes: number
+      list: { quarantineRoot: string }
+    }
+    const plan = {
+      deleteBytes: p.deleteBytes,
+      quarantineBytes: p.quarantineBytes,
+      quarantineRoot: p.list.quarantineRoot,
+      systemDrive: 'C:',
+    }
     const largest = fs.find(f => f.id === ids[0]) as Finding
-    const on = proposalQuestion({ findings: fs, ids, summary: plan.summary, isCleanupOn: true })
-    assert.ok(on.includes(plan.summary))
+    const on = proposalQuestion({ findings: fs, ids, plan, isCleanupOn: true })
+    assert.match(on, /^Free up about [\d.]+ (GB|MB) on C:\?/)
+    assert.match(on, /You can put them back any time/)
+    assert.match(on, /to D:\\Drive Cleanup Quarantine/)
     assert.ok(on.includes(largest.path.slice(-40)))
-    assert.match(on, new RegExp(`cleaning ${String(ids.length)} items`))
-    assert.ok(!on.includes('Cleanup is off'))
-    assert.match(proposalQuestion({ findings: fs, ids, summary: plan.summary, isCleanupOn: false }), /^Cleanup is off/)
+    assert.doesNotMatch(on, /\bclass [AB]\b|\bfindings?\b|SHA-256|\bUAC\b|\bDISM\b/i, 'no jargon')
+    assert.ok(!on.includes('turned off'))
+    assert.match(
+      proposalQuestion({ findings: fs, ids, plan, isCleanupOn: false }),
+      /turned off now; this answer also turns it on/,
+    )
+  })
+  it('a quarantine on the system drive is not counted as freed, and says so', () => {
+    const plan = {
+      deleteBytes: 1024 ** 3,
+      quarantineBytes: 5 * 1024 ** 3,
+      quarantineRoot: 'C:\\Drive Cleanup Quarantine',
+      systemDrive: 'C:',
+    }
+    assert.equal(freedEstimate(plan, 0), 1024 ** 3)
+    assert.equal(freedEstimate({ ...plan, quarantineRoot: 'D:\\Drive Cleanup Quarantine' }, 2), 6 * 1024 ** 3 + 2)
+    const q = proposalQuestion({ findings: fs, ids: [], plan, isCleanupOn: true })
+    assert.match(q, /space comes back only when you empty it/)
+  })
+  it('the yes button names the size', () => {
+    assert.equal(answers(14.2 * 1024 ** 3).yes, 'Free 14.2 GB')
+    assert.equal(answers(0).yes, 'Clean up')
+    assert.deepEqual([answers(1).review, answers(1).cancel], ['Let me choose', 'Not now'])
   })
 })
 
@@ -799,8 +842,12 @@ describe('administrator tasks (§20)', () => {
     const w = windows()
     const temp = w.items.find(i => i.id === 'windows_temp')
     if (temp?.status === 'ok') assert.equal(estimateBytes('windows_temp', w), temp.bytes)
-    assert.match(elevatedSummary(['windows_temp', 'delivery_optimization'], w), /Windows will ask you once more/)
-    assert.match(elevatedSummary(['delivery_optimization'], w), /size known after/)
+    assert.match(
+      elevatedSummary(['windows_temp', 'delivery_optimization'], w),
+      /"Windows PowerShell" permission prompt/,
+    )
+    assert.doesNotMatch(elevatedSummary(['delivery_optimization'], w), /about/, 'no made-up size')
+    assert.equal(elevatedEstimate(['delivery_optimization'], w), 0)
   })
   it('a proposal can be administrator tasks alone, and the question says so', () => {
     const fs = findingsForPlan()
@@ -810,10 +857,11 @@ describe('administrator tasks (§20)', () => {
     const q = proposalQuestion({
       findings: fs,
       ids: [],
-      summary: '',
+      plan: { deleteBytes: 0, quarantineBytes: 0, quarantineRoot: '', systemDrive: 'C:' },
       isCleanupOn: true,
       elevatedLine: elevatedSummary(['memory_dumps'], windows()),
+      elevatedBytes: elevatedEstimate(['memory_dumps'], windows()),
     })
-    assert.match(q, /^Claude proposes Windows cleanup only\. Needs administrator/)
+    assert.match(q, /\n• Clean Windows itself: System memory dumps/)
   })
 })

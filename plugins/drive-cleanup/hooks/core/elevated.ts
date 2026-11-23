@@ -112,14 +112,20 @@ export function checkTasks(
   return { status: 'ok', tasks: ELEVATED_TASK_IDS.filter(id => ids.includes(id)) }
 }
 
-/** The dialog's line for the administrator part of a proposal. */
+/** What the administrator tasks are estimated to free, counting only the sizes the scan knows. */
+export function elevatedEstimate(tasks: readonly ElevatedTaskId[], windows: RawWindows | null): number {
+  return tasks.reduce((sum, t) => sum + (estimateBytes(t, windows) ?? 0), 0)
+}
+
+/** The dialog's line for the administrator part of a proposal, in plain words. */
 export function elevatedSummary(tasks: readonly ElevatedTaskId[], windows: RawWindows | null): string {
   if (tasks.length === 0) return ''
   const parts = tasks.map(t => {
     const bytes = estimateBytes(t, windows)
-    return `${ELEVATED_TASKS[t].label} (${bytes === null ? 'size known after' : `about ${sizeText(bytes)}`})${ELEVATED_TASKS[t].isSetting ? ', a setting' : ''}`
+    const size = bytes === null ? '' : ` (about ${sizeText(bytes)})`
+    return `${ELEVATED_TASKS[t].label}${size}${ELEVATED_TASKS[t].isSetting ? ', a setting you can undo' : ''}`
   })
-  return `Needs administrator, so Windows will ask you once more: ${parts.join('; ')}.`
+  return `Clean Windows itself: ${parts.join('; ')}. Windows will then show a "Windows PowerShell" permission prompt; that is Drive Cleanup asking for administrator rights.`
 }
 
 // ---------------------------------------------------------------- PowerShell

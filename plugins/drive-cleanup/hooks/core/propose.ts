@@ -108,37 +108,75 @@ export function selectForProposal(findings: readonly Finding[], input: ProposalI
 
 const short = (path: string, max = 70): string => (path.length <= max ? path : `…${path.slice(-(max - 1))}`)
 
+/** What the dialog needs to know about the plan: from the planner, never from Claude. */
+export type QuestionPlan = {
+  deleteBytes: number
+  quarantineBytes: number
+  /** Where quarantined items go, or ''. */
+  quarantineRoot: string
+  /** The system drive, to say when a quarantine on it frees nothing yet. */
+  systemDrive: string
+}
+
+const lower = (s: string): string => s.charAt(0).toLowerCase() + s.slice(1)
+
+/** What the person gets back: deleted, quarantined off the system drive, and administrator estimates. */
+export function freedEstimate(plan: QuestionPlan, elevatedBytes: number): number {
+  const movesOff =
+    plan.quarantineRoot !== '' && !plan.quarantineRoot.toUpperCase().startsWith(plan.systemDrive.toUpperCase())
+  return plan.deleteBytes + (movesOff ? plan.quarantineBytes : 0) + elevatedBytes
+}
+
 /**
- * The one question the person answers. It names the real totals and the
- * largest items from the scan, never Claude's words, so a proposal cannot
- * describe itself as something it is not.
+ * The one question the person answers, in plain words. Every number and name
+ * comes from the scan and the planner, never from Claude, so a proposal
+ * cannot describe itself as something it is not.
  */
 export function proposalQuestion(opts: {
   findings: readonly Finding[]
   ids: readonly string[]
-  summary: string
+  plan: QuestionPlan
   isCleanupOn: boolean
   /** The administrator line from core/elevated.ts, or ''. */
   elevatedLine?: string
+  /** What the administrator tasks are estimated to free (known sizes only). */
+  elevatedBytes?: number
 }): string {
   const byId = new Map(opts.findings.map(f => [f.id, f]))
   const items = opts.ids.map(id => byId.get(id)).filter((f): f is Finding => f !== undefined)
-  const largest = items
-    .toSorted((a, b) => b.bytes - a.bytes)
-    .slice(0, 3)
-    .map(f => `${short(f.path)} (${sizeText(f.bytes)}, ${CATEGORY_LABEL[f.category]})`)
-  const head = opts.isCleanupOn ? '' : 'Cleanup is off; answering Turn on and clean also turns it on. '
-  const files =
-    items.length > 0
-      ? `Claude proposes cleaning ${String(items.length)} items. ${opts.summary} Largest: ${largest.join('; ')}. Quarantined items can be restored; deleted caches and temporary files cannot.`
-      : 'Claude proposes Windows cleanup only.'
-  const admin = opts.elevatedLine === undefined || opts.elevatedLine === '' ? '' : ` ${opts.elevatedLine}`
-  return `${head}${files}${admin} Clean them?`
+  const p = opts.plan
+  const total = freedEstimate(p, opts.elevatedBytes ?? 0)
+  const lines: string[] = [total > 0 ? `Free up about ${sizeText(total)} on ${p.systemDrive}?` : 'Run this cleanup?']
+  if (p.deleteBytes > 0) {
+    lines.push(
+      `• Delete ${sizeText(p.deleteBytes)} of caches and temporary files. Apps rebuild these; this cannot be undone.`,
+    )
+  }
+  if (p.quarantineBytes > 0) {
+    const kinds = [...new Set(items.filter(f => f.action === 'quarantine').map(f => lower(CATEGORY_LABEL[f.category])))]
+    const onSystem = p.quarantineRoot.toUpperCase().startsWith(p.systemDrive.toUpperCase())
+    lines.push(
+      `• Move ${sizeText(p.quarantineBytes)} of your files (${kinds.slice(0, 3).join(', ')}) to ${p.quarantineRoot}. You can put them back any time.${onSystem ? ` It is on ${p.systemDrive}, so that space comes back only when you empty it.` : ''}`,
+    )
+  }
+  if (opts.elevatedLine !== undefined && opts.elevatedLine !== '') lines.push(`• ${opts.elevatedLine}`)
+  if (items.length > 0) {
+    const largest = items
+      .toSorted((a, b) => b.bytes - a.bytes)
+      .slice(0, 3)
+      .map(f => `${short(f.path, 60)} (${sizeText(f.bytes)})`)
+    lines.push(`Biggest: ${largest.join('; ')}.${items.length > 3 ? ` Plus ${String(items.length - 3)} more.` : ''}`)
+  }
+  if (!opts.isCleanupOn) lines.push('Cleanup is turned off now; this answer also turns it on.')
+  return lines.join('\n')
 }
 
-export const ANSWERS = {
-  clean: 'Clean',
-  turnOnAndClean: 'Turn on and clean',
-  review: 'Show the list',
-  cancel: 'Cancel',
-} as const
+/** The dialog's answers. The yes label names the size, so the person sees what they agree to. */
+export function answers(total: number): { yes: string; review: string; cancel: string } {
+  const size = total > 0 ? ` ${sizeText(total)}` : ''
+  return {
+    yes: size === '' ? 'Clean up' : `Free${size}`,
+    review: 'Let me choose',
+    cancel: 'Not now',
+  }
+}

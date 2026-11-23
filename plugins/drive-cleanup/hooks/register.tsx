@@ -4,6 +4,7 @@ import { CATEGORY_LABEL } from './core/classify.ts'
 import { percentText, sizeText } from './core/format.ts'
 import type { Finding } from './core/types.ts'
 import { ensureCleanupOn, ensureDuplicatesOn } from './consent.ts'
+import { isActionable } from './core/propose.ts'
 import { cleanSelected, purgeRun, readRunIndex, restoreRun, start } from './cleanup.ts'
 import { isScanRunning, loadLatestScan, PANE_ID, requestCancel, startScan } from './scan.ts'
 import { loadSettings, saveSettings } from './settings-store.ts'
@@ -24,6 +25,7 @@ const summaryAtom = atom({ plugin: 'drive-cleanup', key: 'summary' } as const, n
   shape: 'summary-1',
 })
 
+const TAB_LABEL = { overview: 'Overview', review: 'Choose items', quarantine: 'Undo', settings: 'Settings' } as const
 const STEP_MARK = { pending: '·', running: '…', ok: '✓', not_checked: '!' } as const
 const PAGE_SIZE = 8
 
@@ -55,7 +57,10 @@ async function toggleCleanup($: EngineInterface): Promise<void> {
     return
   }
   if (await ensureCleanupOn($))
-    await setActivity($, { state: 'idle', message: 'Cleanup is on. Select items in Review.' })
+    await setActivity($, {
+      state: 'idle',
+      message: 'Cleanup is on. Pick items in Choose items, or press Clean safe items on Overview.',
+    })
 }
 
 async function toggleDuplicates($: EngineInterface): Promise<void> {
@@ -67,6 +72,16 @@ async function toggleDuplicates($: EngineInterface): Promise<void> {
   if (await ensureDuplicatesOn($)) {
     await setActivity($, { state: 'idle', message: 'Duplicate search is on. It runs with the next deep scan.' })
   }
+}
+
+/** One press: every safe item (caches, temporary files) selected, then the usual confirmation. */
+async function cleanSafeItems($: EngineInterface): Promise<void> {
+  const scan = await loadLatestScan($)
+  if (scan === undefined) return
+  if (!(await ensureCleanupOn($))) return
+  const ids = scan.classified.findings.filter(f => f.class === 'safe' && isActionable(f)).map(f => f.id)
+  await setSelection($, () => ({ scanId: scan.meta.scanId, ids }))
+  await cleanSelected($)
 }
 
 export const register: Register = on => {
@@ -138,7 +153,7 @@ export const register: Register = on => {
     const tabs = (['overview', 'review', 'quarantine', 'settings'] as const).map(name => (
       <Button
         key={`tab-${name}`}
-        label={name[0]?.toUpperCase() + name.slice(1)}
+        label={TAB_LABEL[name]}
         variant={view.name === name ? 'primary' : undefined}
         dimColor={view.name !== name}
         onPress={() => {
@@ -169,7 +184,9 @@ export const register: Register = on => {
         <Box flexDirection="column" gap={1}>
           {header}
           {summary === null ? (
-            <Text dimColor>No deep scan yet. Run one to see where the space on C: went.</Text>
+            <Text dimColor>
+              No deep scan yet. Run one to see where the space on C: went, or ask Claude to "free up space".
+            </Text>
           ) : (
             <Box flexDirection="column">
               {summary.drive !== null && (
@@ -180,9 +197,17 @@ export const register: Register = on => {
                   {percentText(summary.drive.freeBytes, summary.drive.totalBytes)})
                 </Text>
               )}
-              <Text>A. Safe to clean: {sizeText(summary.recoverable.safeBytes)}</Text>
-              <Text>B. Review first: {sizeText(summary.recoverable.reviewBytes)}</Text>
-              <Text dimColor>Windows-managed (manual): {sizeText(summary.recoverable.manualBytes)}</Text>
+              <Text>
+                Safe to clean: <Text weight="bold">{sizeText(summary.recoverable.safeBytes)}</Text>
+                <Text dimColor> (caches and temporary files; apps rebuild them)</Text>
+              </Text>
+              <Text>
+                Worth a look: <Text weight="bold">{sizeText(summary.recoverable.reviewBytes)}</Text>
+                <Text dimColor> (your old files; moved to quarantine, so you can undo)</Text>
+              </Text>
+              <Text dimColor>
+                Windows itself: {sizeText(summary.recoverable.manualBytes)} (ask Claude, or Windows Settings)
+              </Text>
               {summary.top.map(t => (
                 <Text dimColor>
                   • {t.label}: {sizeText(t.bytes)} ({String(t.count)})
@@ -236,10 +261,20 @@ export const register: Register = on => {
             ) : (
               <Button
                 key="run"
-                label="Run deep scan"
-                variant="primary"
+                label={summary === null ? 'Run deep scan' : 'Scan again'}
+                variant={summary === null ? 'primary' : undefined}
                 onPress={() => {
                   void startScan($).catch(() => {})
+                }}
+              />
+            )}
+            {!isRunning && summary !== null && summary.recoverable.safeBytes > 0 && (
+              <Button
+                key="clean-safe"
+                label={`Clean safe items (${sizeText(summary.recoverable.safeBytes)})…`}
+                variant="primary"
+                onPress={() => {
+                  start(() => cleanSafeItems($))
                 }}
               />
             )}
@@ -261,7 +296,7 @@ export const register: Register = on => {
             )}
           </Box>
           {footer}
-          <Text dimColor>Scans only read. Files change only when you select them in Review and confirm.</Text>
+          <Text dimColor>Scans only read. Nothing changes until you say yes.</Text>
         </Box>
       )
     }
@@ -298,7 +333,16 @@ export const register: Register = on => {
               }}
             />
           ) : (
-            <Text color="warning">Cleanup is off. Turn it on in Settings to clean what you select.</Text>
+            <Button
+              key="turn-on-clean"
+              label="Turn on cleanup and clean selected…"
+              variant="primary"
+              onPress={() => {
+                start(async () => {
+                  if (await ensureCleanupOn($)) await cleanSelected($)
+                })
+              }}
+            />
           )}
         </Box>
       )
@@ -309,8 +353,8 @@ export const register: Register = on => {
           <Box flexDirection="column" gap={1}>
             {header}
             <Text dimColor>
-              Class A items are deleted (re-creatable); class B items are moved to quarantine and can be restored.
-              Protected items are never listed here.
+              Caches and temporary files are deleted (apps rebuild them). Your own files are moved to quarantine, so you
+              can put them back. Windows and program files are never listed.
             </Text>
             {categories.length === 0 && <Text dimColor>Nothing to clean in the latest scan.</Text>}
             {categories.map(cat => {
@@ -318,7 +362,7 @@ export const register: Register = on => {
               const ids = items.map(f => f.id)
               const chosen = items.filter(f => selected.has(f.id))
               const bytes = items.reduce((s, f) => s + f.bytes, 0)
-              const cls = items[0]?.class === 'safe' ? 'A' : 'B'
+              const cls = items[0]?.class === 'safe' ? 'deleted' : 'restorable'
               return (
                 <Box flexDirection="column">
                   <Text>
@@ -381,7 +425,7 @@ export const register: Register = on => {
                 }}
               />
               <Text dimColor wrap="truncate-end">
-                {f.action === 'delete' ? 'Delete · ' : 'Quarantine · '}
+                {f.action === 'delete' ? 'Deleted · ' : 'Moved to quarantine (restorable) · '}
                 {f.reason}
               </Text>
             </Box>
@@ -467,7 +511,8 @@ export const register: Register = on => {
             </Box>
           ))}
           <Text dimColor>
-            Quarantine is never deleted by itself. Delete a run for good once you are sure, to free its space.
+            Quarantine keeps your files until you say otherwise. Restore puts them back where they were; Delete for good
+            frees their space once you are sure.
           </Text>
           {footer}
         </Box>
@@ -535,7 +580,7 @@ export const register: Register = on => {
             }}
           />
         </Box>
-        <Text dimColor>Only you can change these; Claude cannot.</Text>
+        <Text dimColor>Only you can change these: here, or by answering yes when Claude asks.</Text>
         {footer}
       </Box>
     )

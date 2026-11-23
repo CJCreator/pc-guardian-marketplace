@@ -4,6 +4,21 @@ All notable changes to Drive Cleanup. The format follows [Keep a Changelog](http
 
 ## [Unreleased]
 
+## [1.3.0-beta.1] - 2026-11-23
+
+Easier to use. Still not run on Windows: see TESTING.md §6–§8.
+
+### Added
+
+- **Clean safe items (…)** on the pane's Overview: one press selects every cache and temporary file and asks once (and turns cleanup on, if needed, by asking).
+- **Turn on cleanup and clean selected…** in Choose items, in place of a trip to Settings.
+
+### Changed
+
+- **The confirmation is plain**: "Free up about 21 GB on C:?", then what is deleted (apps rebuild it), what is moved and can be put back, the Windows part with a heads-up about the "Windows PowerShell" permission prompt, and the biggest items. The yes button names the size (**Free 21 GB**); the others are **Let me choose** and **Not now**. A quarantine on C: is not counted as freed, and the dialog says so.
+- **Plain words everywhere**: no "class A/B" in the pane; tabs are Overview, Choose items, Undo, Settings; results read "Deleted 14.2 GB of caches and temporary files, moved 4.1 GB of your files to quarantine" and end with how to undo.
+- **`/drive-cleanup:free-space`** tells Claude how to talk: a short plan before and a before/after summary, sizes in GB, no jargon, and a fresh scan on its own when the old one is too old.
+
 ## [1.2.0-beta.1] - 2026-11-23
 
 Administrator cleanup, asked twice. Not yet run on Windows: see TESTING.md §7.

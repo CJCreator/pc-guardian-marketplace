@@ -115,13 +115,17 @@ export const emptyManifest = (): string => csv(MANIFEST_HEADER, [])
 
 export function runSummaryText(r: RunRecord): string {
   const parts: string[] = []
-  if (r.quarantinedBytes > 0) parts.push(`moved ${fmt(r.quarantinedBytes)} to quarantine`)
-  if (r.deletedBytes > 0) parts.push(`deleted ${fmt(r.deletedBytes)}`)
-  if (r.restoredBytes > 0) parts.push(`restored ${fmt(r.restoredBytes)}`)
-  if (r.purgedBytes > 0) parts.push(`deleted ${fmt(r.purgedBytes)} from quarantine for good`)
+  if (r.deletedBytes > 0) parts.push(`deleted ${fmt(r.deletedBytes)} of caches and temporary files`)
+  if (r.quarantinedBytes > 0) parts.push(`moved ${fmt(r.quarantinedBytes)} of your files to quarantine`)
+  if (r.restoredBytes > 0) parts.push(`put back ${fmt(r.restoredBytes)}`)
+  if (r.purgedBytes > 0) parts.push(`emptied ${fmt(r.purgedBytes)} from quarantine for good`)
   if (parts.length === 0) parts.push('nothing changed')
-  const skipped = r.counts.skipped > 0 ? `; ${String(r.counts.skipped)} skipped (see the manifest for why)` : ''
-  return `${parts.join(', ')}${skipped}.`
+  const skipped =
+    r.counts.skipped > 0
+      ? ` ${String(r.counts.skipped)} ${r.counts.skipped === 1 ? 'item was' : 'items were'} left alone (in use, changed since the scan, or protected).`
+      : ''
+  const text = parts.join(', ')
+  return `${text.charAt(0).toUpperCase()}${text.slice(1)}.${skipped}`
 }
 
 function fmt(bytes: number): string {

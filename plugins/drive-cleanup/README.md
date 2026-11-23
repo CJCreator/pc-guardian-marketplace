@@ -1,6 +1,6 @@
 # Drive Cleanup
 
-> **Beta (1.2.0-beta.1): not yet run on a Windows PC.** Every milestone in [PLAN.md](PLAN.md) is built
+> **Beta (1.3.0-beta.1): not yet run on a Windows PC.** Every milestone in [PLAN.md](PLAN.md) is built
 > and unit-tested, but the PowerShell scripts have not run on Windows yet. Follow
 > [TESTING.md](TESTING.md) on a test PC or with a backup before using it on files you care about.
 
@@ -32,7 +32,7 @@ Cleanup finds where the space went and what can be recovered safely, and you app
 - **Nothing changes without your yes.** Claude can scan, choose what to clean and propose it, but the
   cleanup starts only when you answer **Clean** in Claude Code's own dialog, which shows the real totals
   and the largest items. Cancel, closing the dialog, or a session with no one to ask (`claude -p`)
-  changes nothing. Prefer to pick each item? Do it in the pane's Review instead.
+  changes nothing. Prefer to pick each item? Use the pane's Choose items tab instead.
 - **Administrator tasks ask twice.** Windows' own permission prompt (UAC) comes after your Clean; say No
   there and only the administrator part is skipped. Claude picks from six fixed tasks, never a path or a
   command, and the elevated script is checked against its fingerprint inside the elevated process before
@@ -56,11 +56,11 @@ That is all you need. You can also just ask ("why is C: full?", "find duplicates
 Claude uses Drive Cleanup's other skills (audit, duplicates, developer caches, reports, verify,
 self-check, choosing items by hand in the pane) without a command of their own.
 
-You can also just ask ("why is my C: drive full?", "which installers can I remove?").
-**The pane** beside the chat has four views: **Overview** (free space, recoverable space, scan
-progress with Cancel and Retry, Verify), **Review** (select by category or item, then Clean
-selected…), **Quarantine** (Restore, or Delete for good) and **Settings** (cleanup on/off, duplicate
-search on/off, quarantine drive). Only you can press its buttons.
+**The pane** beside the chat (ask Claude to "open Drive Cleanup") has four tabs: **Overview** (free
+space, what can be cleaned, **Clean safe items** in one press, Scan again, Verify), **Choose items**
+(tick by category or item, then Clean selected…), **Undo** (Restore, or Delete for good) and
+**Settings** (cleanup on/off, duplicate search on/off, quarantine drive). Only you can press its
+buttons.
 
 ## Reports
 
