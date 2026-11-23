@@ -4,6 +4,19 @@ All notable changes to Drive Cleanup. The format follows [Keep a Changelog](http
 
 ## [Unreleased]
 
+## [1.6.0-beta.1] - 2026-11-23
+
+Closes the open gaps of PLAN.md §21.4. Still not run on Windows: see TESTING.md §11.
+
+### Fixed
+
+- **Long paths**: folders whose path is over 260 characters are reported as not read (in the summary and `storage_audit.md`), no longer as "no access". A file or folder is never moved to a quarantine path of 260 characters or more, so every quarantine can be restored and deleted later.
+- **External USB disks**: "Auto" no longer puts quarantine on a disk that can be unplugged, and move advice no longer points to one. Choose such a drive in Settings if you want it.
+- **8.3 short names** (`PROGRA~1`) are expanded before the safety check when cleaning; Restore refuses them.
+- **Administrator tasks** now work for a profile or install path with an apostrophe or `$` (for example `C:\Users\D'Souza`).
+- **Large old files** are only looked for in your own folders, as documented.
+- After a partial Restore, the quarantine shows the size that is really left.
+
 ## [1.5.0-beta.1] - 2026-11-23
 
 Three commands, better use of the space, and the fixes from an end-to-end review. Still not run on Windows: see TESTING.md §10.

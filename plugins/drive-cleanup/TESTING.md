@@ -171,6 +171,16 @@ Best on a PC with a second fixed drive (D:) and, if you have it, WSL or Docker D
 | 10.8 | Same, answer **Delete for good** | The run folder is gone; freed space reported; the pane's Undo tab shows it deleted. |
 | 10.9 | `claude -p "empty my drive cleanup quarantine"` | Nothing is deleted. |
 
+## 11. Open gaps closed (1.6)
+
+| # | Do | Expect |
+| --- | --- | --- |
+| 11.1 | Make a folder path over 260 characters under `Downloads\dc-test` (e.g. nested 40-character names), then `/drive-cleanup:scan fresh reports` | `storage_audit.md` lists it under "paths over 260 characters", not under folders that could not be opened. |
+| 11.2 | Fixture file at 230 characters, select it, clean | Skipped: "Its path would be too long in quarantine"; the file is untouched. |
+| 11.3 | Plug in a USB hard disk with lots of room, quarantine drive on Auto, clean an installer | It goes to an internal drive (or C:), never the USB disk. Settings > quarantine drive set to that letter: it goes there. |
+| 11.4 | Windows account whose folder has an apostrophe (or install Claude Code under such a path), propose `windows_temp` | The Windows permission prompt appears and the task runs. |
+| 11.5 | Restore a run with one item made in use (open in an app), then `/drive-cleanup:quarantine` | The listed size is what is still in quarantine. |
+
 ## Clean up after testing
 
 Restore or delete for good every quarantine run, then delete `Downloads\dc-test` and

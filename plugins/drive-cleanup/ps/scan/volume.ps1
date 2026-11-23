@@ -30,7 +30,7 @@ $principal = [Security.Principal.WindowsPrincipal]::new($identity)
 $diskByLetter = @{}
 try {
     $partitions = @(Get-CimInstance -Namespace root/Microsoft/Windows/Storage -ClassName MSFT_Partition -Property DriveLetter, DiskNumber)
-    $physical = @(Get-CimInstance -Namespace root/Microsoft/Windows/Storage -ClassName MSFT_PhysicalDisk -Property DeviceId, MediaType, HealthStatus)
+    $physical = @(Get-CimInstance -Namespace root/Microsoft/Windows/Storage -ClassName MSFT_PhysicalDisk -Property DeviceId, MediaType, HealthStatus, BusType)
     foreach ($partition in $partitions) {
         $letter = [string]$partition.DriveLetter
         if ($letter -notmatch '^[A-Za-z]$') { continue }
@@ -42,14 +42,19 @@ try {
 }
 
 $healthNames = @{ 0 = 'Healthy'; 1 = 'Warning'; 2 = 'Unhealthy'; 5 = 'Unknown' }
+# Bus types of disks that can be unplugged: 1394, USB, SD, MMC. Windows reports
+# an external USB hard disk as a fixed drive, so the bus is what tells them apart.
+$externalBuses = @(4, 7, 12, 13)
 
 $drives = @(Get-CimInstance -ClassName Win32_LogicalDisk -Filter 'DriveType=3' -Property DeviceID, VolumeName, FileSystem, Size, FreeSpace | ForEach-Object {
     $id = [string]$_.DeviceID
     $disk = $diskByLetter[$id]
     $media = $null
     $health = $null
+    $isExternal = $null
     if ($null -ne $disk) {
         $media = [int]$disk.MediaType
+        if ($null -ne $disk.BusType) { $isExternal = $externalBuses -contains [int]$disk.BusType }
         $code = [int]$disk.HealthStatus
         if ($healthNames.ContainsKey($code)) { $health = $healthNames[$code] } else { $health = [string]$code }
     }
@@ -62,6 +67,7 @@ $drives = @(Get-CimInstance -ClassName Win32_LogicalDisk -Filter 'DriveType=3' -
         isSystem     = $id -eq $env:SystemDrive
         mediaType    = $media
         healthStatus = $health
+        isExternal   = $isExternal
     }
 })
 

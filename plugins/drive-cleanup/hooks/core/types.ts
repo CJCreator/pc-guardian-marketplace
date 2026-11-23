@@ -21,6 +21,8 @@ export type RawDrive = {
   isSystem: boolean
   mediaType: number | null
   healthStatus: string | null
+  /** On a USB, 1394, SD or MMC bus: it can be unplugged, so "auto" never puts quarantine there. Null when Windows does not say. */
+  isExternal?: boolean | null
 }
 
 /** ps/scan/volume.ps1 */
@@ -94,6 +96,9 @@ export type RawWalk = {
   entryCount: number
   deniedFolders: number
   deniedSample: string[]
+  /** Folders with a path too long for Windows PowerShell 5.1 (260 characters): not read. */
+  longPathFolders: number
+  longPathSample: string[]
   linkedFolders: number
   linkedSample: string[]
   totals: { fileCount: number; folderCount: number; bytes: number }

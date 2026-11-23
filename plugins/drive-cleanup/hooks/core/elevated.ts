@@ -130,8 +130,13 @@ export function elevatedSummary(tasks: readonly ElevatedTaskId[], windows: RawWi
 
 // ---------------------------------------------------------------- PowerShell
 
-/** A path Drive Cleanup built itself: a drive, then no quote, control or wildcard characters. */
-const SAFE_PATH = /^[A-Za-z]:\\[^'"`$\r\n\0*?<>|]+$/
+/**
+ * A path Drive Cleanup built itself: a drive, then no double quote, control or
+ * wildcard characters. Apostrophes, `$` and backticks are allowed (a profile
+ * named D'Souza): every path goes into PowerShell inside single quotes, where
+ * only a single quote is special, and `quote` doubles each one.
+ */
+const SAFE_PATH = /^[A-Za-z]:\\[^"\r\n\0*?<>|]+$/
 const RUN_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const SHA256 = /^[0-9a-f]{64}$/
 
@@ -143,7 +148,8 @@ export type ElevatedLaunch = {
   powershellPath: string
 }
 
-const quote = (s: string): string => `'${s.replaceAll("'", "''")}'`
+/** A PowerShell single-quoted string. PowerShell also reads the typographic quotes ‘ ’ ‚ ‛ as single quotes, so they are doubled too. */
+export const quote = (s: string): string => `'${s.replaceAll(/['\u2018\u2019\u201A\u201B]/g, q => q + q)}'`
 
 /** Refuses anything that is not exactly what Drive Cleanup builds. */
 export function checkLaunch(l: ElevatedLaunch): string | null {

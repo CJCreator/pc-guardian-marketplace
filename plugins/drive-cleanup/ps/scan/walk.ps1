@@ -96,6 +96,9 @@ $folderCount = 0
 $totalBytes = 0.0
 $denied = 0
 $deniedSample = [System.Collections.Generic.List[string]]::new()
+# Folders whose path is too long for Windows PowerShell 5.1 (260 characters): reported, not read.
+$longPaths = 0
+$longPathSample = [System.Collections.Generic.List[string]]::new()
 $linked = 0
 $linkedSample = [System.Collections.Generic.List[string]]::new()
 $old12Count = 0
@@ -179,8 +182,13 @@ while ($pending.Count -gt 0) {
     try {
         $children = [System.IO.DirectoryInfo]::new($item.Path).GetFileSystemInfos()
     } catch {
-        $denied++
-        Add-Sample $deniedSample $item.Path
+        if ($_.Exception -is [System.IO.PathTooLongException] -or $item.Path.Length -ge 248) {
+            $longPaths++
+            Add-Sample $longPathSample $item.Path
+        } else {
+            $denied++
+            Add-Sample $deniedSample $item.Path
+        }
         continue
     }
     $folderCount++
@@ -342,7 +350,7 @@ while ($pending.Count -gt 0) {
             Add-Candidate 'log' $c.FullName $len 1 $false $mt $at $c.CreationTimeUtc.Ticks $null
         } elseif ($item.InDownloads -and $mt -lt $cutDownload) {
             Add-Candidate 'old_download' $c.FullName $len 1 $false $mt $at $c.CreationTimeUtc.Ticks $null
-        } elseif ($len -ge $largeOldBytes -and $mt -lt $cut12m) {
+        } elseif ($isUserArea -and $len -ge $largeOldBytes -and $mt -lt $cut12m) {
             Add-Candidate 'large_old' $c.FullName $len 1 $false $mt $at $c.CreationTimeUtc.Ticks $null
         }
     }
@@ -403,6 +411,8 @@ $protOut = @($protAgg.GetEnumerator() | Sort-Object -Property { $_.Value[0] } -D
     entryCount        = $entries
     deniedFolders     = $denied
     deniedSample      = @($deniedSample)
+    longPathFolders   = $longPaths
+    longPathSample    = @($longPathSample)
     linkedFolders     = $linked
     linkedSample      = @($linkedSample)
     totals            = [pscustomobject]@{ fileCount = $fileCount; folderCount = $folderCount; bytes = $totalBytes }

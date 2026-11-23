@@ -574,8 +574,17 @@ export async function restoreRun($: EngineInterface, runId: string): Promise<str
     const fullyRestored = record.counts.skipped === 0
     await saveRun($, record, list => [
       indexEntry(record, runId),
+      // What was put back no longer counts as held in quarantine, so the next question says what is left.
       ...list.map(e =>
-        e.runId === runId ? { ...e, quarantineState: fullyRestored ? ('restored' as const) : e.quarantineState } : e,
+        e.runId === runId
+          ? {
+              ...e,
+              quarantineState: fullyRestored ? ('restored' as const) : e.quarantineState,
+              quarantinedBytes: fullyRestored
+                ? e.quarantinedBytes
+                : Math.max(0, e.quarantinedBytes - data.restoredBytes),
+            }
+          : e,
       ),
     ])
     const summary = `Restore: ${runSummaryText(record)}`

@@ -22,10 +22,12 @@ export const QUARANTINE_REMIND_DAYS = 14
 
 const PERSONAL_FOLDERS = ['Videos', 'Pictures', 'Music', 'Documents', 'Downloads', 'Desktop'] as const
 
-/** The non-system fixed NTFS/ReFS drive with the most free space, if any. */
+/** The internal, non-system NTFS/ReFS drive with the most free space, if any (folders moved to an external disk vanish when it is unplugged). */
 export function otherDrive(volume: RawVolume | null): RawDrive | undefined {
   return (volume?.drives ?? [])
-    .filter(d => !d.isSystem && /^(ntfs|refs)$/i.test(d.fileSystem) && /^[A-Za-z]:$/.test(d.letter))
+    .filter(
+      d => !d.isSystem && d.isExternal !== true && /^(ntfs|refs)$/i.test(d.fileSystem) && /^[A-Za-z]:$/.test(d.letter),
+    )
     .toSorted((a, b) => b.freeBytes - a.freeBytes)[0]
 }
 
