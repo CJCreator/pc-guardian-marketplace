@@ -81,8 +81,14 @@ const CHECKS: Check[] = [
     verify: all(ranAll('**/*.test.{ts,tsx}', PCG), noneSkipped),
   },
   { name: 'script-hashes', cmd: ['bun', 'dev/update-hashes.mjs', '--check'], cwd: DC, budgetMs: 1_000 },
+  {
+    name: 'selftest:wifi-optimizer',
+    cmd: ['bash', 'plugins/wifi-optimizer/dev/selftest.sh'],
+    budgetMs: 2_000,
+    verify: out => (/^ok {3}same steps on Windows$/m.test(out) ? null : 'selftest did not reach its last check'),
+  },
   { name: 'validate:marketplace', cmd: ['claude', 'plugin', 'validate', '.'], budgetMs: 10_000 },
-  ...['pc-guardian', 'drive-cleanup'].map(p => ({
+  ...['pc-guardian', 'drive-cleanup', 'wifi-optimizer'].map(p => ({
     name: `validate:${p}`,
     cmd: ['claude', 'plugin', 'validate', `plugins/${p}`],
     budgetMs: 10_000,

@@ -16,6 +16,12 @@
       "source": "./plugins/drive-cleanup",
       "description": "Deep C: drive audit and cleanup for Windows: duplicates by SHA-256, installers, archives, developer caches, leftovers. Scans only read; Claude proposes, you answer once; files go to a restorable quarantine. Beta.",
       "version": "1.6.0-beta.1"
+    },
+    {
+      "name": "wifi-optimizer",
+      "source": "./plugins/wifi-optimizer",
+      "description": "Wi-Fi and home network diagnosis: link and channel congestion, hop-by-hop latency, DNS, throughput and bufferbloat, measured one at a time. Ranks the real bottlenecks, guides router fixes you make, then re-measures Before vs. After. Only reads. macOS; Linux and Windows untested. Beta.",
+      "version": "0.1.0-beta.1"
     }
   ]
 }

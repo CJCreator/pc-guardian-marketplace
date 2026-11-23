@@ -1,11 +1,12 @@
 # Techgramam plugins for Claude Code
 
-The `techgramam` marketplace: Claude Code plugins for Windows PCs.
+The `techgramam` marketplace: Claude Code plugins for Windows PCs and home networks.
 
 | Plugin | What it does | Version |
 | --- | --- | --- |
 | [PC Guardian](plugins/pc-guardian/README.md) | Health audit of a Windows PC (performance, startup, storage, browsers, security, stability) with a Health Score, and cleanup you turn on, tick and confirm. | 2.1.0 |
 | [Drive Cleanup](plugins/drive-cleanup/README.md) | Deep audit and cleanup of the system drive: duplicates, installers, archives, developer caches, leftovers. Claude proposes, you answer once; personal files go to a restorable quarantine. **Beta, not yet tested on Windows.** | 1.6.0-beta.1 |
+| [Wi-Fi Optimizer](plugins/wifi-optimizer/README.md) | Diagnoses Wi-Fi and home network bottlenecks (link, channel congestion, latency, DNS, bufferbloat), guides router fixes, then re-measures Before vs. After. Only reads. **Beta, macOS; Linux and Windows untested.** | 0.1.0-beta.1 |
 
 ## Install
 
@@ -15,9 +16,10 @@ Your computer needs a git credential for github.com (an SSH key, or `gh auth log
 ```
 /plugin install pc-guardian --marketplace CJCreator/pc-guardian-marketplace
 /plugin install drive-cleanup --marketplace CJCreator/pc-guardian-marketplace
+/plugin install wifi-optimizer --marketplace CJCreator/pc-guardian-marketplace
 ```
 
-Then: `/drive-cleanup:scan` to see what uses C:, `/drive-cleanup:free-space` to get space back, `/drive-cleanup:quarantine` to put files back or free the quarantine, and `/pc-guardian:audit` for a health check. Anything else, just ask. Each plugin's README has its requirements and how to uninstall it.
+Then: `/drive-cleanup:scan` to see what uses C:, `/drive-cleanup:free-space` to get space back, `/drive-cleanup:quarantine` to put files back or free the quarantine, `/pc-guardian:audit` for a health check, and `/wifi-optimizer:optimize` (then `… compare`) for Wi-Fi. Anything else, just ask. Each plugin's README has its requirements and how to uninstall it.
 
 ## Layout
 
@@ -25,6 +27,7 @@ Then: `/drive-cleanup:scan` to see what uses C:, `/drive-cleanup:free-space` to 
 .claude-plugin/marketplace.json   the marketplace: one entry per plugin
 plugins/pc-guardian/              PC Guardian
 plugins/drive-cleanup/            Drive Cleanup
+plugins/wifi-optimizer/           Wi-Fi Optimizer
 ```
 
 Each plugin keeps its own `LICENSE`, `CHANGELOG.md` and README.
@@ -40,6 +43,7 @@ Each plugin keeps its own `LICENSE`, `CHANGELOG.md` and README.
 | `bun run lint` | oxlint with `.oxlintrc.json`. |
 | `bun check` | Type-checks the mod code; `bun check -p tsconfig.node.json` the dev tooling. |
 | `bun test` | Drive Cleanup's unit tests, in random order. |
+| `bash plugins/wifi-optimizer/dev/selftest.sh` | Wi-Fi Optimizer's offline script checks (also in `bun run ci`). |
 
 Git hooks run through [hk](https://hk.jdx.dev) 2.13 (`hk.pkl`): `hk install` once. Pre-commit formats and lints
 the staged files; pre-push runs `bun run ci`.

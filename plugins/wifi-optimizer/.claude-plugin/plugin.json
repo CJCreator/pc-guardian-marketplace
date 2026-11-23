@@ -1,0 +1,10 @@
+{
+  "name": "wifi-optimizer",
+  "version": "0.1.0-beta.1",
+  "description": "Wi-Fi and home network diagnosis for macOS (Linux and Windows untested): link and RF congestion, hop-by-hop latency, DNS, throughput and bufferbloat, measured one at a time. Finds the real bottlenecks, guides router fixes you make yourself, then re-measures for a Before vs. After table. Diagnostics only read.",
+  "author": {
+    "name": "Techgramam"
+  },
+  "license": "SEE LICENSE IN LICENSE",
+  "keywords": ["wifi", "network", "diagnostics", "latency", "bufferbloat", "dns"]
+}
