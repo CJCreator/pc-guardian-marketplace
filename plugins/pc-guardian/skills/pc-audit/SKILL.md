@@ -1,6 +1,7 @@
 ---
 description: How to answer questions about this Windows PC's health, speed, startup, storage, browsers, security or stability with PC Guardian. Use when the user asks why their PC is slow, what to clean up, whether it is secure, or about a PC Guardian score, scan or recommendation.
 allowed-tools: mcp__pc-guardian__self_check mcp__pc-guardian__run_full_audit mcp__pc-guardian__get_system_performance mcp__pc-guardian__get_startup_apps mcp__pc-guardian__get_storage_analysis mcp__pc-guardian__get_browser_diagnostics mcp__pc-guardian__get_security_status mcp__pc-guardian__get_stability_status mcp__pc-guardian__get_health_score mcp__pc-guardian__get_recommendations mcp__pc-guardian__generate_report mcp__pc-guardian__get_scan_history mcp__pc-guardian__compare_scans mcp__pc-guardian__open_dashboard
+user-invocable: false
 ---
 
 # Explaining a PC with PC Guardian

@@ -1,8 +1,8 @@
 ---
 description: Save a PC Guardian report of the latest scan (html, markdown or json) and give its path. Read-only; it writes only to PC Guardian's own reports folder.
 argument-hint: '[html|markdown|json|pdf]'
-disable-model-invocation: true
 allowed-tools: mcp__pc-guardian__generate_report
+user-invocable: false
 ---
 
 Generate a PC Guardian report.

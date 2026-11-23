@@ -1,8 +1,8 @@
 ---
 description: Open the PC Guardian dashboards - the pane beside the chat, and the full dashboard in a browser on this PC (one-time link).
 argument-hint: '[pane|browser|both]'
-disable-model-invocation: true
 allowed-tools: mcp__pc-guardian__open_dashboard
+user-invocable: false
 ---
 
 Call `mcp__pc-guardian__open_dashboard` with `target` set to "$ARGUMENTS" when it is "pane", "browser" or "both"; otherwise leave `target` out (both).

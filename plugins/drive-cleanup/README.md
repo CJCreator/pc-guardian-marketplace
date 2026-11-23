@@ -1,6 +1,6 @@
 # Drive Cleanup
 
-> **Beta (1.0.0-beta.1): not yet run on a Windows PC.** Every milestone in [PLAN.md](PLAN.md) is built
+> **Beta (1.1.0-beta.1): not yet run on a Windows PC.** Every milestone in [PLAN.md](PLAN.md) is built
 > and unit-tested, but the PowerShell scripts have not run on Windows yet. Follow
 > [TESTING.md](TESTING.md) on a test PC or with a backup before using it on files you care about.
 
@@ -27,8 +27,10 @@ Cleanup finds where the space went and what can be recovered safely, and you app
   browser profiles, credentials and keys (`.ssh`, `.env`, certificates), databases, editor settings and
   extensions, and every development project (`.git`, `node_modules`, lock files, source). They are never
   offered.
-- **You approve each item**, in the Drive Cleanup pane, and Claude Code asks you to confirm. Claude
-  can run the audit and explain it, but has no way to clean.
+- **Nothing changes without your yes.** Claude can scan, choose what to clean and propose it, but the
+  cleanup starts only when you answer **Clean** in Claude Code's own dialog, which shows the real totals
+  and the largest items. Cancel, closing the dialog, or a session with no one to ask (`claude -p`)
+  changes nothing. Prefer to pick each item? Do it in the pane's Review instead.
 - **Your files are moved, not deleted.** Installers, archives, downloads, duplicates, leftovers and the
   rest of class B go to `Drive Cleanup Quarantine` on another drive when there is room, and can be
   restored. Only re-creatable data (class A) is deleted. Quarantine is never deleted until you say so.
@@ -41,16 +43,14 @@ Cleanup finds where the space went and what can be recovered safely, and you app
 
 | Command | What it does |
 | --- | --- |
-| `/drive-cleanup:audit [rescan]` | Deep, read-only audit of C: (a few minutes) and what could be recovered, by class |
-| `/drive-cleanup:duplicates` | Duplicate groups and the copy to keep in each |
-| `/drive-cleanup:dev-caches` | Developer caches: safe, manual (with the command), or protected |
-| `/drive-cleanup:review` | Opens the pane's Review and explains what happens to what you select |
-| `/drive-cleanup:verify` | After a cleanup: free space, tools, projects and quarantine checked; final report |
-| `/drive-cleanup:report` | Writes the eight audit reports |
-| `/drive-cleanup:self-check` | Confirms Drive Cleanup can run on this PC |
+| `/drive-cleanup:free-space [target]` | Scans C:, proposes what to clean (for example `20 GB`, or `developer caches`), asks you once, cleans, then verifies |
+| `/drive-cleanup:undo-cleanup` | Puts back the files of a cleanup from quarantine, after you confirm |
+
+That is all you need. You can also just ask ("why is C: full?", "find duplicates", "write the reports"):
+Claude uses Drive Cleanup's other skills (audit, duplicates, developer caches, reports, verify,
+self-check, choosing items by hand in the pane) without a command of their own.
 
 You can also just ask ("why is my C: drive full?", "which installers can I remove?").
-
 **The pane** beside the chat has four views: **Overview** (free space, recoverable space, scan
 progress with Cancel and Retry, Verify), **Review** (select by category or item, then Clean
 selected…), **Quarantine** (Restore, or Delete for good) and **Settings** (cleanup on/off, duplicate
@@ -80,7 +80,7 @@ Requirements: Windows 10 or 11, Claude Code 2.1.312 or later, no administrator r
 /plugin install drive-cleanup --marketplace CJCreator/pc-guardian-marketplace
 ```
 
-Then start a new session and run `/drive-cleanup:self-check`. Uninstalling leaves
+Then start a new session and ask Claude to check that Drive Cleanup can run (its self-check). Uninstalling leaves
 `%APPDATA%\techgramam-drive-cleanup` and any `Drive Cleanup Quarantine` folder: restore or delete your
 quarantine runs first.
 

@@ -4,6 +4,22 @@ All notable changes to Drive Cleanup. The format follows [Keep a Changelog](http
 
 ## [Unreleased]
 
+## [1.1.0-beta.1] - 2026-11-23
+
+One command to free space; Claude proposes, you answer once. Still not run on a Windows PC: see TESTING.md §4.
+
+### Added
+
+- **`/drive-cleanup:free-space [target]`**: scans, picks what to clean (all class A, and class B only where the evidence is strong), proposes it, and verifies afterwards.
+- **Tool `propose_cleanup`**: Claude names findings, or categories and classes with an optional size cap; Claude Code's own dialog shows the person the real totals and largest items with Clean (Turn on and clean, when cleanup is off), Show the list, or Cancel. Checked by the same planner as the pane; protected items, a duplicate group's copy to keep and anything Drive Cleanup does not clean are refused. After a Cancel, new proposals are refused for 5 minutes.
+- **Tool `restore_quarantine`** and **`/drive-cleanup:undo-cleanup`**: restore a cleanup run after the person confirms.
+- **`run_deep_scan` `includeDuplicates`**: asks the person to turn on duplicate search, in place of a trip to Settings.
+
+### Changed
+
+- **Safety rule S5**: "only the person approves" now covers both the pane and Claude's proposal; in both, nothing runs without the person's answer in Claude Code's dialog, and never in `-p`. Purging a quarantine stays in the pane only. PLAN.md §19.
+- **Two commands instead of eight**: the other skills are no longer in the slash menu (`user-invocable: false`); Claude still uses them when asked.
+
 ## [1.0.0-beta.1] - 2026-10-31
 
 Every milestone of PLAN.md built. Tested off Windows; not yet run on a Windows PC: see TESTING.md.

@@ -1,8 +1,8 @@
 ---
 description: Deep, read-only audit of the system drive (C:) with Drive Cleanup - where the space went and what could be recovered, by class (safe, review, protected). Takes a few minutes; changes nothing.
 argument-hint: '[rescan]'
-disable-model-invocation: true
 allowed-tools: mcp__drive-cleanup__run_deep_scan mcp__drive-cleanup__get_scan_status mcp__drive-cleanup__get_storage_summary mcp__drive-cleanup__get_findings mcp__drive-cleanup__get_windows_recommendations mcp__drive-cleanup__get_dev_caches mcp__drive-cleanup__get_duplicate_groups mcp__drive-cleanup__open_pane
+user-invocable: false
 ---
 
 If "$ARGUMENTS" is "rescan", or `get_storage_summary` says there is no deep scan yet, call `mcp__drive-cleanup__run_deep_scan` (it takes a few minutes and shows progress in the Drive Cleanup pane). Otherwise call `mcp__drive-cleanup__get_storage_summary` and say how old the scan is.

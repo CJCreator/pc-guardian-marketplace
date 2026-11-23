@@ -1,7 +1,7 @@
 ---
 description: What PC Guardian's cleanup could free on this PC (Temp files, Recycle Bin, browser caches, startup apps), and where you clean. Claude only shows the list; you tick and confirm.
-disable-model-invocation: true
 allowed-tools: mcp__pc-guardian__get_cleanup_preview
+user-invocable: false
 ---
 
 Call `mcp__pc-guardian__get_cleanup_preview` once. It measures; it changes nothing.

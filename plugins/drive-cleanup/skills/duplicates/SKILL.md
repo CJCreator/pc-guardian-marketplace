@@ -1,7 +1,7 @@
 ---
 description: Duplicate files and folders on this PC (identical by SHA-256), with the suggested copy to keep in each group and the space keeping one copy would recover.
-disable-model-invocation: true
 allowed-tools: mcp__drive-cleanup__get_duplicate_groups mcp__drive-cleanup__get_settings
+user-invocable: false
 ---
 
 Call `mcp__drive-cleanup__get_duplicate_groups` (limit 10).

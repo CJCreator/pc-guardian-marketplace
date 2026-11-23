@@ -4,8 +4,8 @@ The `techgramam` marketplace: Claude Code plugins for Windows PCs.
 
 | Plugin | What it does | Version |
 | --- | --- | --- |
-| [PC Guardian](plugins/pc-guardian/README.md) | Health audit of a Windows PC (performance, startup, storage, browsers, security, stability) with a Health Score, and cleanup you turn on, tick and confirm. | 2.0.1 |
-| [Drive Cleanup](plugins/drive-cleanup/README.md) | Deep audit and cleanup of the system drive: duplicates, installers, archives, developer caches, leftovers. You approve each item; personal files go to a restorable quarantine. **Beta, not yet tested on Windows.** | 1.0.0-beta.1 |
+| [PC Guardian](plugins/pc-guardian/README.md) | Health audit of a Windows PC (performance, startup, storage, browsers, security, stability) with a Health Score, and cleanup you turn on, tick and confirm. | 2.0.2 |
+| [Drive Cleanup](plugins/drive-cleanup/README.md) | Deep audit and cleanup of the system drive: duplicates, installers, archives, developer caches, leftovers. Claude proposes, you answer once; personal files go to a restorable quarantine. **Beta, not yet tested on Windows.** | 1.1.0-beta.1 |
 
 ## Install
 
@@ -17,7 +17,7 @@ Your computer needs a git credential for github.com (an SSH key, or `gh auth log
 /plugin install drive-cleanup --marketplace CJCreator/pc-guardian-marketplace
 ```
 
-Each plugin's README has its requirements, commands and how to uninstall it.
+Then: `/drive-cleanup:free-space` to get space back, `/pc-guardian:audit` for a health check, `/drive-cleanup:undo-cleanup` to put files back. Anything else, just ask. Each plugin's README has its requirements and how to uninstall it.
 
 ## Layout
 

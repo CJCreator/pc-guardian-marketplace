@@ -1,7 +1,7 @@
 ---
-description: How to approve a cleanup with Drive Cleanup - opens the pane's Review, and explains what will happen to what you select. Claude cannot approve or clean.
-disable-model-invocation: true
+description: Choose items by hand in Drive Cleanup's pane (Review) and clean them - for when you want to pick each item yourself instead of /drive-cleanup:free-space.
 allowed-tools: mcp__drive-cleanup__open_pane mcp__drive-cleanup__get_settings mcp__drive-cleanup__get_storage_summary
+user-invocable: false
 ---
 
 Call `mcp__drive-cleanup__get_settings` and `mcp__drive-cleanup__get_storage_summary`, then `mcp__drive-cleanup__open_pane`.
@@ -14,4 +14,4 @@ Then explain in a few lines:
 4. Each item is checked again just before it is touched; anything changed since the scan, in use, or protected is skipped and reported.
 5. Afterwards: **Verify** in the pane (or `/drive-cleanup:verify`) checks the result and writes the final report. Quarantine is never deleted by itself; they delete a run for good when sure.
 
-You cannot select, approve, clean, restore or delete anything; do not try another way.
+You cannot press the pane's buttons or answer the dialog. To clean on the person's behalf instead, use `propose_cleanup` (see `/drive-cleanup:free-space`).

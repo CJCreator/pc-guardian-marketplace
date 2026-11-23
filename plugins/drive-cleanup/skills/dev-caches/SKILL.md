@@ -1,7 +1,7 @@
 ---
 description: Developer tool caches and project build caches on this PC - npm, Yarn, pip, NuGet, VS Code, Antigravity, pnpm, Gradle, Maven, Docker, Next.js, Vite - what is safe to clean, what is manual, what is protected.
-disable-model-invocation: true
 allowed-tools: mcp__drive-cleanup__get_dev_caches
+user-invocable: false
 ---
 
 Call `mcp__drive-cleanup__get_dev_caches` once.

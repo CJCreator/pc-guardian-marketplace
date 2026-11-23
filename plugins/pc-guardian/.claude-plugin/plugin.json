@@ -1,6 +1,6 @@
 {
   "name": "pc-guardian",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "Windows PC health audit: performance, startup, storage, browser, security and stability. Scans only read; it changes your PC only through cleanup you turn on, tick and confirm.",
   "author": {
     "name": "Techgramam"

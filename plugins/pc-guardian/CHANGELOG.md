@@ -4,6 +4,12 @@ All notable changes to PC Guardian AI. The format follows [Keep a Changelog](htt
 
 ## [Unreleased]
 
+## [2.0.2] - 2026-11-23
+
+### Changed
+
+- **One command, `/pc-guardian:audit`.** The other skills (dashboard, report, compare, score, priorities, a recommendation, self-check, cleanup) are no longer in the slash menu; ask in plain words and Claude uses them. Nothing PC Guardian can do changes.
+
 ## [2.0.1] - 2026-10-31
 
 ### Changed
