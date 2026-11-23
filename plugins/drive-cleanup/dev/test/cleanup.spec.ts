@@ -52,7 +52,7 @@ import {
   RawVerifyCheck,
 } from '../../hooks/core/validate.ts'
 import { parseSettings } from '../../hooks/settings-store.ts'
-import { candidate, ctx, NOW, PROFILE, volume, windows } from './fixtures.ts'
+import { candidate, ctx, NOW, PROFILE, volume, walk, windows } from './fixtures.ts'
 
 const PLUGIN = join(import.meta.dirname, '..', '..')
 const ps = (rel: string): string => readFileSync(join(PLUGIN, 'ps', ...rel.split('/')), 'utf8')
@@ -968,5 +968,110 @@ describe('administrator tasks (§20)', () => {
       elevatedBytes: elevatedEstimate(['memory_dumps'], windows()),
     })
     assert.match(q, /\n• Clean Windows itself: System memory dumps/)
+  })
+})
+
+describe('review fixes (1.5)', () => {
+  const fs = findingsForPlan()
+  const keeper = fs.find(f => f.duplicate?.isSuggestedKeeper === true) as Finding
+  const copies = fs.filter(f => f.duplicate?.groupId === keeper.duplicate?.groupId && f.id !== keeper.id)
+
+  it('gives a quarantine to a selection of empty folders only (0 bytes)', () => {
+    const empty: Finding = {
+      ...keeper,
+      id: 'empty',
+      path: `${PROFILE}\\Downloads\\old-empty`,
+      category: 'empty_folder',
+      class: 'review',
+      action: 'quarantine',
+      isFolder: true,
+      bytes: 0,
+      duplicate: undefined,
+      protectedBy: null,
+    }
+    const plan = planCleanup(planInput({ findings: [...fs, empty], selectedIds: ['empty'] }))
+    assert.equal(plan.status, 'ok')
+    if (plan.status === 'ok') assert.equal(plan.list.quarantineRoot, 'D:\\Drive Cleanup Quarantine')
+  })
+
+  it('never lets a selected folder take the last copy of a duplicate group', () => {
+    const holder: Finding = {
+      ...keeper,
+      id: 'holder',
+      path: keeper.path.slice(0, keeper.path.lastIndexOf('\\')),
+      category: 'leftover',
+      class: 'review',
+      action: 'quarantine',
+      isFolder: true,
+      duplicate: undefined,
+      protectedBy: null,
+    }
+    const ids = ['holder', ...copies.map(c => c.id)]
+    const refused = planCleanup(planInput({ findings: [...fs, holder], selectedIds: ids }))
+    assert.equal(refused.status, 'refused')
+    assert.match((refused as { message: string }).message, /Keep at least one/)
+    assert.equal(planCleanup(planInput({ findings: [...fs, holder], selectedIds: ['holder'] })).status, 'ok')
+  })
+
+  it('counts a file inside a folder that is itself offered only once', () => {
+    const inside = `${PROFILE}\\AppData\\Local\\OldTool`
+    const scan = classifyScan(
+      {
+        walk: null,
+        windows: null,
+        leftovers: {
+          installedCount: 40,
+          folders: [{ path: inside, bytes: 6 * 1024 ** 3, fileCount: 9, lastWriteUtc: iso(500), isTruncated: false }],
+        },
+        devcaches: devcaches(),
+      },
+      ctx(),
+    )
+    const withFile = classifyScan(
+      {
+        walk: {
+          ...walk([candidate({ kind: 'large_old', path: `${inside}\\big.bin`, bytes: 5 * 1024 ** 3 })]),
+          userTemp: { fileCount: 0, bytes: 0, oldCount: 0, oldBytes: 0 },
+        },
+        windows: null,
+        leftovers: {
+          installedCount: 40,
+          folders: [{ path: inside, bytes: 6 * 1024 ** 3, fileCount: 9, lastWriteUtc: iso(500), isTruncated: false }],
+        },
+        devcaches: devcaches(),
+      },
+      ctx(),
+    )
+    assert.ok(!withFile.findings.some(f => f.path.endsWith('big.bin')), 'the file goes with its folder')
+    assert.equal(withFile.recoverable.reviewBytes, scan.recoverable.reviewBytes)
+  })
+
+  it('protects OneDrive, every browser profile and mail stores', () => {
+    const c = ctx()
+    for (const p of [
+      `${PROFILE}\\OneDrive\\Installers\\setup.exe`,
+      `${PROFILE}\\OneDrive - Contoso\\old.zip`,
+      `${PROFILE}\\AppData\\Local\\Vivaldi\\User Data\\Default\\Login Data`,
+      `${PROFILE}\\AppData\\Roaming\\Thunderbird\\Profiles\\x.default\\Mail\\Inbox`,
+      `${PROFILE}\\AppData\\Local\\Microsoft\\Outlook\\big.nst`,
+    ]) {
+      assert.notEqual(protectedBy(p, c), null, p)
+    }
+    assert.equal(
+      protectedBy(`${PROFILE}\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Cache\\Cache_Data\\f_0001`, c),
+      null,
+      'a browser cache stays cleanable',
+    )
+    assert.equal(protectedBy(`${PROFILE}\\Downloads\\OneDriveSetup.exe`, c), null)
+  })
+
+  it('apply.ps1 survives a delete-only run, saves restore.json after each move, and guards OneDrive', () => {
+    const apply = ps('actions/apply.ps1')
+    assert.match(apply, /\$runDir = \$null\r?\nif \(\$needsQuarantine\) \{\r?\n\s+\$runDir = Join-Path/)
+    assert.doesNotMatch(apply, /% 50/)
+    assert.match(apply, /OneDrive\( - \.\+\)\?\$/)
+    assert.match(apply, /SetAccessRuleProtection\(\$true, \$false\)/)
+    assert.match(ps('actions/restore.ps1'), /Test-Forbidden \$dest/)
+    assert.match(ps('actions/elevated.ps1'), /'Temp'\) '\*' \$now\.AddDays\(-7\) \$true \$true/)
   })
 })

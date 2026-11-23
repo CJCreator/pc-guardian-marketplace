@@ -242,7 +242,8 @@ export const RawDevCachesCheck: Check<RawDevCaches> = obj({
       isTruncated: bool,
       roots: list(
         obj({ path: str, status: oneOf(['ok', 'missing', 'denied'] as const), bytes: num, fileCount: int }),
-        16,
+        // A browser has three cache folders per profile, and people have many profiles.
+        192,
       ),
     }),
     64,

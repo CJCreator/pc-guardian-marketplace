@@ -1,6 +1,6 @@
 # Drive Cleanup
 
-> **Beta (1.4.0-beta.1): not yet run on a Windows PC.** Every milestone in [PLAN.md](PLAN.md) is built
+> **Beta (1.5.0-beta.1): not yet run on a Windows PC.** Every milestone in [PLAN.md](PLAN.md) is built
 > and unit-tested, but the PowerShell scripts have not run on Windows yet. Follow
 > [TESTING.md](TESTING.md) on a test PC or with a backup before using it on files you care about.
 
@@ -21,6 +21,10 @@ Cleanup finds where the space went and what can be recovered safely, and you app
   superseded Windows components (DISM component cleanup), and a smaller hibernation file.
 - **Windows recommendations** for the rest (Storage Sense, Windows.old, restore points, low space, disk
   health): manual steps only.
+- **Use the space better**, not only once: when you have another drive, which big folders (Videos,
+  Pictures, Downloads…) and developer caches to move there and how; WSL and Docker disks that never
+  shrink by themselves; OneDrive files kept on this PC; and quarantine still holding space. Steps for
+  you, nothing moved for you.
 
 ## How it keeps your data safe
 
@@ -40,7 +44,7 @@ Cleanup finds where the space went and what can be recovered safely, and you app
   it runs.
 - **Your files are moved, not deleted.** Installers, archives, downloads, duplicates, leftovers and the
   rest of class B go to `Drive Cleanup Quarantine` on another drive when there is room, and can be
-  restored. Only re-creatable data (class A) is deleted. Quarantine is never deleted until you say so.
+  restored. Only re-creatable data (class A) is deleted. Quarantine is never deleted until you say so (in the pane, or `/drive-cleanup:quarantine` with its own question); until then it still takes space.
 - **Checked again before acting.** Each item must be unchanged since the scan (size, date, and for
   duplicates the SHA-256), not a link and not protected; a move to another drive is verified by
   SHA-256 before the original is removed. Anything else is skipped and reported.
@@ -48,14 +52,15 @@ Cleanup finds where the space went and what can be recovered safely, and you app
 
 ## Commands
 
+Three commands, one for each moment:
+
 | Command | What it does |
 | --- | --- |
-| `/drive-cleanup:free-space [target]` | Scans C:, proposes what to clean (for example `20 GB`, or `developer caches`), asks you once, cleans, then verifies |
-| `/drive-cleanup:undo-cleanup` | Puts back the files of a cleanup from quarantine, after you confirm |
+| `/drive-cleanup:scan` | **Before.** What is using C: and how to get space back: what can be cleaned, what Windows can free, and what to move to another drive instead of deleting. Changes nothing. Add `duplicates`, `caches` or `reports` to go deeper, or ask a question. |
+| `/drive-cleanup:free-space [target]` | **Clean.** Proposes what to clean (for example `20 GB`, or `developer caches`), asks you once, cleans, checks the result, and tells you how to keep the space. |
+| `/drive-cleanup:quarantine` | **After.** Put files back from quarantine, delete a quarantine for good to free its space (asked first), or check what the cleanup changed. |
 
-That is all you need. You can also just ask ("why is C: full?", "find duplicates", "write the reports"):
-Claude uses Drive Cleanup's other skills (audit, duplicates, developer caches, reports, verify,
-self-check, choosing items by hand in the pane) without a command of their own.
+You can also just ask ("why is C: full?", "find duplicates", "write the reports").
 
 **The pane** beside the chat (ask Claude to "open Drive Cleanup") has four tabs: **Overview** (free
 space, what can be cleaned, **Clean safe items** in one press, Scan again, Verify), **Choose items**

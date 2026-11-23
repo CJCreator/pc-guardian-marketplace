@@ -13,10 +13,10 @@ import { readActivity, readSelection, readView, setActivity, setSelection, setVi
 import { verifyCleanup } from './verify.ts'
 
 // Drive Cleanup's hooks module: Claude's tools, and the pane beside the chat.
-// Claude's tools read, except propose_cleanup and restore_quarantine, which
-// only ask: nothing changes until the person answers yes in Claude Code's own
-// dialog. The pane's buttons, which only the person presses, do the same;
-// purging a quarantine is the pane's alone.
+// Claude's tools read, except propose_cleanup, restore_quarantine and
+// empty_quarantine, which only ask: nothing changes until the person answers
+// yes in Claude Code's own dialog. The pane's buttons, which only the person
+// presses, do the same.
 
 const progressAtom = atom({ plugin: 'drive-cleanup', key: 'progress' } as const, null, {
   shape: 'progress-1',
@@ -118,8 +118,8 @@ export const register: Register = on => {
   on('tool.call', { tool: 'mcp__drive-cleanup__get_findings' }, ($, e) => answerTool($, 'get_findings', e)).catch(
     internalFailure,
   )
-  on('tool.call', { tool: 'mcp__drive-cleanup__get_windows_recommendations' }, ($, e) =>
-    answerTool($, 'get_windows_recommendations', e),
+  on('tool.call', { tool: 'mcp__drive-cleanup__get_recommendations' }, ($, e) =>
+    answerTool($, 'get_recommendations', e),
   ).catch(internalFailure)
   on('tool.call', { tool: 'mcp__drive-cleanup__generate_audit_reports' }, ($, e) =>
     answerTool($, 'generate_audit_reports', e),
@@ -144,6 +144,9 @@ export const register: Register = on => {
   )
   on('tool.call', { tool: 'mcp__drive-cleanup__restore_quarantine' }, ($, e) =>
     answerTool($, 'restore_quarantine', e),
+  ).catch(internalFailure)
+  on('tool.call', { tool: 'mcp__drive-cleanup__empty_quarantine' }, ($, e) =>
+    answerTool($, 'empty_quarantine', e),
   ).catch(internalFailure)
   on('tool.call', { tool: 'mcp__drive-cleanup__open_pane' }, ($, e) => answerTool($, 'open_pane', e)).catch(
     internalFailure,

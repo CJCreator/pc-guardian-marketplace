@@ -4,7 +4,7 @@ Drive Cleanup was built and unit-tested off Windows: its PowerShell scripts have
 plan tests it on a real PC, from read-only to destructive, so a problem shows up before anything is
 moved. Do it first on a test PC or VM, or at least with a backup of anything you care about.
 
-Report every failure with: the step, what `/drive-cleanup:self-check` says, the pane's text, and
+Report every failure with: the step, what Claude says when you ask "run Drive Cleanup's self-check", the pane's text, and
 the files under `%APPDATA%\techgramam-drive-cleanup\` that the step names.
 
 ## 0. Install
@@ -17,7 +17,7 @@ Start a new session.
 
 | # | Do | Expect |
 | --- | --- | --- |
-| 0.1 | `/drive-cleanup:self-check` | Windows detected; data folder path; "all 12 match their fingerprints". |
+| 0.1 | Ask "run Drive Cleanup's self-check" | Windows detected; data folder path; "all 12 match their fingerprints". |
 | 0.2 | Ask Claude "open the Drive Cleanup pane" | Pane beside the chat with Overview / Review / Quarantine / Settings. |
 
 ## 1. Read-only scan (nothing may change)
@@ -30,13 +30,13 @@ should write nothing.
 
 | # | Do | Expect |
 | --- | --- | --- |
-| 1.1 | `/drive-cleanup:audit` | Pane shows the steps running; Duplicates says "Off…". Within about 5 minutes: a summary with drive usage, A/B/manual totals. |
+| 1.1 | `/drive-cleanup:scan fresh` | Pane shows the steps running; Duplicates says "Off…". Within about 5 minutes: a summary with drive usage, A/B/manual totals. |
 | 1.2 | Check timings in the pane | Walk under 4 minutes (it stops at 4 and says "partial" if not). Note the file count and time. |
 | 1.3 | Pane > Overview | Free space matches Explorer's "This PC" for C:. |
-| 1.4 | `/drive-cleanup:report` | 8 files in `%APPDATA%\techgramam-drive-cleanup\audits\<date>\`; CSVs open in Excel with correct columns and no formula warnings. |
+| 1.4 | `/drive-cleanup:scan reports` | 8 files in `%APPDATA%\techgramam-drive-cleanup\audits\<date>\`; CSVs open in Excel with correct columns and no formula warnings. |
 | 1.5 | Open `storage_audit.md` | Top-level folders add up roughly to used space; "What was not read" lists denied and linked folders. |
 | 1.6 | Ask "what is protected in the largest files list?" | `pagefile.sys`, `hiberfil.sys`, anything under Windows / Program Files marked protected. |
-| 1.7 | `/drive-cleanup:dev-caches` | Your installed tools' caches with sizes; tools you don't have are absent. |
+| 1.7 | `/drive-cleanup:scan caches` | Your installed tools' caches with sizes; tools you don't have are absent. |
 | 1.8 | Look for false positives | Open `cleanup_recommendations.md`. **Nothing** under B may be inside a code project (except `.next\cache`, `node_modules\.vite`, `.turbo`, `.parcel-cache`), in `.ssh`, a `.env`, a database or a browser profile. Report any. |
 
 ## 2. Fixture folder (for destructive tests)
@@ -87,7 +87,7 @@ Then Pane > Settings > Duplicate search > Turn on… (confirm), and run a new de
 
 | # | Do | Expect |
 | --- | --- | --- |
-| 4.1 | `/drive-cleanup:verify` | `final_cleanup_report.md`: free before/after, your tools found, projects intact, quarantine "intact". |
+| 4.1 | `/drive-cleanup:quarantine check` | `final_cleanup_report.md`: free before/after, your tools found, projects intact, quarantine "intact". |
 | 4.2 | Edit a quarantined file, verify again | Reported as **changed**. |
 
 ## 5. Edge cases
@@ -111,9 +111,9 @@ Recreate the fixture folder (§2) and run a new deep scan first.
 | 6.3 | After 5 minutes, `/drive-cleanup:free-space` again, answer **Let me choose** | Pane opens on **Choose items** with the proposed items ticked; nothing moved. |
 | 6.4 | `/drive-cleanup:free-space 1 GB` and answer **Free … GB** | Cleanup turns on; only items up to about 1 GB are cleaned; Claude reports deleted and quarantined sizes, skips with reasons, and runs Verify (free space before and after). |
 | 6.5 | Ask Claude to clean `C:\Windows\notepad.exe` or a file in `.ssh` | Refused before any dialog: protected / not in the scan. |
-| 6.6 | `/drive-cleanup:undo-cleanup` and answer **Restore** | Quarantined fixture files back in place; compare with `Get-FileHash`. |
+| 6.6 | `/drive-cleanup:quarantine restore` and answer **Restore** | Quarantined fixture files back in place; compare with `Get-FileHash`. |
 | 6.7 | `claude -p "free up space on my C drive with drive cleanup"` | Claude proposes; no one can answer, so nothing changes, and it says so. |
-| 6.8 | Type `/` in a new session | Only `drive-cleanup:free-space`, `drive-cleanup:undo-cleanup` and `pc-guardian:audit` from these plugins. "Explain my score", "find duplicates", "write the reports" still work by asking. |
+| 6.8 | Type `/` in a new session | Only `drive-cleanup:scan`, `drive-cleanup:free-space`, `drive-cleanup:quarantine` and `pc-guardian:audit` from these plugins. "Explain my score", "find duplicates", "write the reports" still work by asking. |
 
 ## 7. Administrator cleanup (1.2)
 
@@ -138,7 +138,7 @@ Do this on a VM with a snapshot. Run `/drive-cleanup:free-space` first so there 
 | --- | --- | --- |
 | 8.1 | Open the pane after a scan | Overview says "Safe to clean: … (caches and temporary files; apps rebuild them)" and "Worth a look: … (your old files; moved to quarantine, so you can undo)". Tabs: Overview, Choose items, Undo, Settings. |
 | 8.2 | With cleanup off, press **Clean safe items (…)** | First "Turn on cleanup?", then one plain confirmation; only caches and temporary files are cleaned. |
-| 8.3 | After a cleanup that quarantined files | The message ends "Changed your mind? /drive-cleanup:undo-cleanup, or the Undo tab in the pane, puts files back." |
+| 8.3 | After a cleanup that quarantined files | The message ends "Changed your mind? /drive-cleanup:quarantine, or the Undo tab in the pane, puts files back." |
 | 8.4 | `/drive-cleanup:free-space` end to end | Claude's plan and result follow the skill's templates: sizes in GB, no class A/B, no paths except the three biggest, free space before and after. |
 
 ## 9. Temp, browser caches and the Recycle Bin (1.4)
@@ -154,6 +154,22 @@ Put a few files in the Recycle Bin, then wait a minute. Leave Edge open, close C
 | 9.5 | Before answering 9.4, delete one more file to the Recycle Bin, then answer yes | That newest file is still in the Recycle Bin afterwards; the older ones are gone. Explorer shows no broken entries. |
 | 9.6 | Ask "clean my caches" with "keep my Recycle Bin" | The Recycle Bin is not in the question. |
 | 9.7 | `claude -p "free up space with drive cleanup"` | Nothing changes. |
+
+## 10. Three commands and using the space (1.5)
+
+Best on a PC with a second fixed drive (D:) and, if you have it, WSL or Docker Desktop.
+
+| # | Do | Expect |
+| --- | --- | --- |
+| 10.1 | `/drive-cleanup:scan` | Changes nothing. Free of total, the biggest folders, then three buckets: clean, Windows itself, and **move, don't delete** (only if something applies). |
+| 10.2 | With a Videos or Pictures folder over 5 GB and room on D: | "Move Videos … to D:" with Properties > Location > Move… steps and `D:\Users\<you>\Videos`. Without a second drive: no move advice at all. |
+| 10.3 | With npm/Gradle/NuGet caches over 5 GB | "Keep developer caches on D:" with one command per tool you have, and sizes. |
+| 10.4 | With a WSL distribution or Docker Desktop over 5 GB | "Shrink or move virtual disks": `--set-sparse`, `--move`, and "Never delete a .vhdx file yourself". |
+| 10.5 | After a cleanup that quarantined on **C:** (Settings > quarantine drive C:) | `/drive-cleanup:scan` and `/drive-cleanup:free-space` say that quarantine frees nothing on C: until deleted for good. |
+| 10.6 | `/drive-cleanup:quarantine` with no words | Lists the runs and offers Restore or Delete for good; asks nothing in a dialog and changes nothing. |
+| 10.7 | `/drive-cleanup:quarantine empty the last one`, answer **Not now** | "Nothing was deleted"; the run is still active. |
+| 10.8 | Same, answer **Delete for good** | The run folder is gone; freed space reported; the pane's Undo tab shows it deleted. |
+| 10.9 | `claude -p "empty my drive cleanup quarantine"` | Nothing is deleted. |
 
 ## Clean up after testing
 

@@ -4,6 +4,37 @@ All notable changes to Drive Cleanup. The format follows [Keep a Changelog](http
 
 ## [Unreleased]
 
+## [1.5.0-beta.1] - 2026-11-23
+
+Three commands, better use of the space, and the fixes from an end-to-end review. Still not run on Windows: see TESTING.md §10.
+
+### Changed
+
+- **Three commands**: `/drive-cleanup:scan` (before: what uses C:, read-only), `/drive-cleanup:free-space` (clean, one question), `/drive-cleanup:quarantine` (after: put back, delete for good, check). The nine other skills (audit, drive-audit, duplicates, dev-caches, report, review, self-check, verify, undo-cleanup) are folded into them; plain questions still work.
+- Tool `get_windows_recommendations` is now `get_recommendations` and also covers how to use the space better (below).
+
+### Added
+
+- **Move, don't delete**: big personal folders (Videos, Pictures, Music, Documents, Downloads, Desktop) and developer caches to another drive with room, with each tool's own setting; where new apps and files are saved; WSL and Docker virtual disks (`--set-sparse`, `--move`, never delete the `.vhdx`); OneDrive files kept on this PC; quarantine still holding space (older than 14 days, or on C: where it frees nothing). Steps for the person only.
+- **Tool `empty_quarantine`**: Claude can offer to delete a quarantine run for good; Claude Code asks the person first, as for Restore.
+
+### Fixed
+
+- **A cleanup with nothing to quarantine** (only caches, Temp, dumps, logs) stopped `apply.ps1` before it touched anything: `Join-Path` on an empty quarantine root.
+- **Nothing moved is ever lost from Undo**: `restore.json` is saved after every move, not every 50; a cleanup stopped at Drive Cleanup's time limit records what it had already moved; a move to another drive that could not finish in time is not started.
+- **A folder moved to another drive** whose original files could not all be removed is put back as it was, instead of leaving some originals gone and copies untracked.
+- **Every copy of a duplicate** could go when a selected folder (a duplicate folder, a leftover) held the copy to keep; the planner now counts copies that stay where they are.
+- **Space counted twice**: an old log inside Temp or a cache, a file inside a leftover folder. Nested findings are folded into the outer one.
+- **Empty folders alone** got no quarantine and blocked the run.
+- **Administrator tasks** were cut off at 10 minutes (DISM needs up to 30); in `Windows\Temp` the elevated script now enters only folders Windows or an administrator owns, and checks each folder for a link again just before entering it.
+- **Quarantine folders** are readable only by you, SYSTEM and Administrators; Restore refuses to put files into Windows, Program Files, ProgramData or a Startup folder, and checks a file's SHA-256 before putting it back. A stopped or failed restore undoes its partial copy; Restore and Delete for good can be retried after a partial run.
+- **Protection**: OneDrive folders (moving a file out deletes it from the cloud), every Chromium-based browser profile (Vivaldi, Opera GX, Arc, …), Thunderbird and Outlook data; `apply.ps1` now repeats the credential names, `.docker\config.json`, `.cursor` and `.antigravity`.
+- A scan can no longer start during a cleanup; retrying one scan step no longer makes an old scan look fresh.
+- Cache jobs after a long file move expired under the 15-minute approval rule; a cache where nothing could be removed is reported skipped, not cleaned.
+- Temp cleanup keeps files extracted recently with old dates (creation time checked too).
+- Verify's "freed" total no longer adds quarantine on C: and its purge together.
+- Many browser profiles no longer fail the developer-cache step (limit 192 cache folders); the app-leftovers list stays within its limit and time; duplicate search stops before a group it cannot finish; Verify counts an unreadable quarantined file as missing instead of failing.
+
 ## [1.4.0-beta.1] - 2026-11-23
 
 One question for everything. Still not run on Windows: see TESTING.md §6–§9.

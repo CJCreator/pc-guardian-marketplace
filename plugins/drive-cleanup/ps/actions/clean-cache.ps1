@@ -147,7 +147,7 @@ foreach ($root in $cache.roots) {
             foreach ($child in [System.IO.DirectoryInfo]::new($dir).EnumerateFileSystemInfos()) {
                 if (($child.Attributes -band $reparsePoint) -ne 0) { $skipped++; continue }
                 if (($child.Attributes -band $directoryFlag) -ne 0) { $pending.Push($child.FullName); continue }
-                if ($child.LastWriteTimeUtc -gt $cutoff) { $skipped++; continue }
+                if ($child.LastWriteTimeUtc -gt $cutoff -or $child.CreationTimeUtc -gt $cutoff) { $skipped++; continue }
                 try {
                     $len = [double]$child.Length
                     $child.Delete()

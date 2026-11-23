@@ -72,20 +72,38 @@ function Move-Back([string]$src, [string]$dest, [bool]$isFolder) {
     } else {
         $files.Add($src)
     }
-    foreach ($f in $files) {
-        $target = $dest
-        if ($isFolder) { $target = Join-Path $dest $f.Substring($src.Length) }
-        [System.IO.File]::Copy($f, $target, $false)
-        if ((Get-Sha256 $f) -ne (Get-Sha256 $target)) {
-            [System.IO.File]::Delete($target)
-            throw 'A copy did not match; the item stays in quarantine.'
+    # On any failure, undo the copies made so far: the item stays whole in quarantine.
+    $copied = [System.Collections.Generic.List[string]]::new()
+    try {
+        foreach ($f in $files) {
+            $target = $dest
+            if ($isFolder) { $target = Join-Path $dest $f.Substring($src.Length) }
+            [System.IO.File]::Copy($f, $target, $false)
+            $copied.Add($target)
+            if ((Get-Sha256 $f) -ne (Get-Sha256 $target)) { throw 'A copy did not match; the item stays in quarantine.' }
+            [System.IO.File]::SetLastWriteTimeUtc($target, [System.IO.File]::GetLastWriteTimeUtc($f))
         }
-        [System.IO.File]::SetLastWriteTimeUtc($target, [System.IO.File]::GetLastWriteTimeUtc($f))
+    } catch {
+        foreach ($t in $copied) { try { [System.IO.File]::Delete($t) } catch { } }
+        if ($isFolder) { try { [System.IO.Directory]::Delete($dest, $true) } catch { } }
+        throw
     }
     foreach ($f in $files) { [System.IO.File]::Delete($f) }
     for ($i = $dirs.Count - 1; $i -ge 0; $i--) { try { [System.IO.Directory]::Delete($dirs[$i], $false) } catch { } }
 }
 
+# Never put a file back where it would run or change Windows, whatever restore.json says.
+$systemRoot = [System.IO.Path]::GetFullPath([string]$env:SystemRoot).TrimEnd('\')
+$driveRoot = [string]$env:SystemDrive + '\'
+$forbidden = @($systemRoot, (Join-Path $driveRoot 'Program Files'), (Join-Path $driveRoot 'Program Files (x86)'), (Join-Path $driveRoot 'ProgramData'))
+function Test-Forbidden([string]$path) {
+    if ($path -notmatch '^[A-Za-z]:\\' -or $path.Length -le 3) { return $true }
+    foreach ($r in $script:forbidden) { if ($path.Equals($r, $ignoreCase) -or $path.StartsWith($r + '\', $ignoreCase)) { return $true } }
+    return $path -match '\\Start Menu\\Programs\\Startup(\\|$)'
+}
+
+$budgetMs = 540000
+$stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 $results = [System.Collections.Generic.List[object]]::new()
 $restoredBytes = 0.0
 foreach ($item in @($doc.items)) {
@@ -96,8 +114,17 @@ foreach ($item in @($doc.items)) {
     $dest = [string]$item.original
     $isFolder = [bool]$item.isFolder
     $result = [ordered]@{ id = $id; status = 'skipped'; detail = ''; destination = $dest; sha256 = $null; bytes = [double]$item.bytes }
+    if ($stopwatch.ElapsedMilliseconds -ge $budgetMs) {
+        $result.detail = 'Time limit reached; press Restore again for the rest.'
+        $results.Add([pscustomobject]$result)
+        continue
+    }
     try {
         if (-not ($src.StartsWith($runDir + '\', $ignoreCase))) { throw 'Its quarantine path is outside this run.' }
+        if (Test-Forbidden $dest) { throw 'Its original place is not one Drive Cleanup puts files back to.' }
+        if (-not $isFolder -and $item.sha256 -and [System.IO.File]::Exists($src) -and (Get-Sha256 $src) -ne [string]$item.sha256) {
+            throw 'It changed in quarantine, so it was not put back. It is still there.'
+        }
         if ([System.IO.File]::Exists($dest) -or [System.IO.Directory]::Exists($dest)) { throw 'Something is at its original place again; it stays in quarantine.' }
         if ($isFolder) { if (-not [System.IO.Directory]::Exists($src)) { throw 'It is missing from quarantine.' } }
         elseif (-not [System.IO.File]::Exists($src)) { throw 'It is missing from quarantine.' }
@@ -106,6 +133,8 @@ foreach ($item in @($doc.items)) {
         $item.state = 'restored'
         $result.status = 'restored'
         $restoredBytes += [double]$item.bytes
+        # Saved after every item: if the run is stopped, a retry does not trip over what is already back.
+        [System.IO.File]::WriteAllText($restorePath, ($doc | ConvertTo-Json -Depth 4))
     } catch {
         $result.detail = [string]$_.Exception.Message
     }

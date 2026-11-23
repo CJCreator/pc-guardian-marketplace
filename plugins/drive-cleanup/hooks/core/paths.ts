@@ -135,7 +135,10 @@ const PROFILE_PROTECTED: readonly { parts: string[]; rule: string }[] = [
     rule: 'Browser profile',
   },
   { parts: ['AppData', 'Roaming', 'Opera Software'], rule: 'Browser profile' },
-  { parts: ['AppData', 'Roaming', 'Mozilla', 'Firefox'], rule: 'Browser profile' },
+  { parts: ['AppData', 'Roaming', 'Mozilla'], rule: 'Browser profile' },
+  { parts: ['AppData', 'Roaming', 'Thunderbird'], rule: 'Mail store' },
+  { parts: ['AppData', 'Local', 'Thunderbird'], rule: 'Mail store' },
+  { parts: ['AppData', 'Local', 'Microsoft', 'Outlook'], rule: 'Mail store' },
   { parts: ['AppData', 'Local', 'Programs'], rule: 'Installed programs' },
   { parts: ['.vscode', 'extensions'], rule: 'Editor extensions' },
   { parts: ['.antigravity'], rule: 'Editor data' },
@@ -214,11 +217,16 @@ export function protectedBy(path: string, ctx: ClassifyContext, isFolder = false
       EDITOR_CACHE_PARTS.some(part => isUnder(p, join(ctx.appData, name, part))),
     )
     const isBrowserCacheFolder = isBrowserCache(p, ctx)
+    // OneDrive: moving a file out of it deletes it from the cloud and the person's other devices.
+    const top = p.slice(normalizePath(ctx.userProfile).length + 1).split('\\')[0] ?? ''
+    if (/^onedrive( - .+)?$/.test(top)) return 'OneDrive folder (moving a file out deletes it from the cloud)'
     for (const entry of PROFILE_PROTECTED) {
       if (isEditorCache && entry.rule === 'Editor data') continue
       if (isBrowserCacheFolder && entry.rule === 'Browser profile') continue
       if (isUnder(p, join(ctx.userProfile, ...entry.parts))) return entry.rule
     }
+    // Any Chromium-based browser or app profile (Vivaldi, Opera GX, Arc, …): only its caches are not protected.
+    if (isInAppData(p, ctx) && p.split('\\').includes('user data') && !isBrowserCacheFolder) return 'Browser profile'
   }
 
   // Names and extensions, anywhere.

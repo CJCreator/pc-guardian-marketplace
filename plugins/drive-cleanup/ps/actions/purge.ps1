@@ -1,9 +1,9 @@
 # Drive Cleanup - CLEANUP ACTION. Permanently deletes one quarantine run.
 #
-# Runs only when the person presses "Delete for good" on one quarantine run in
-# Drive Cleanup's Quarantine view and confirms. Never runs by itself. It deletes
+# Runs only when the person confirms "Delete for good" for one quarantine run
+# (in Drive Cleanup's pane, or when Claude asks them with empty_quarantine). Never runs by itself. It deletes
 # only <quarantine>\<run id>\, and only when that folder holds the restore.json
-# Drive Cleanup wrote for that run. Links inside are removed as links; what they
+# Drive Cleanup wrote for that run (deleted last, so a partial purge can be retried). Links inside are removed as links; what they
 # point to is never touched. This cannot be undone.
 #
 # Inputs: DC_RUN_ID, DC_QUARANTINE_ROOT.
@@ -33,6 +33,12 @@ if ([string]$doc.runId -ne $runId) {
 
 $reparsePoint = [System.IO.FileAttributes]::ReparsePoint
 $directoryFlag = [System.IO.FileAttributes]::Directory
+foreach ($p in @($root, $runDir)) {
+    if ((([System.IO.File]::GetAttributes($p)) -band $reparsePoint) -ne 0) {
+        Write-Refusal 'The quarantine folder is a link, so nothing was deleted.'
+        exit 0
+    }
+}
 $bytes = 0.0
 $count = 0
 $failed = 0
@@ -42,7 +48,8 @@ $pending.Push($runDir)
 while ($pending.Count -gt 0) {
     $dir = $pending.Pop()
     $dirs.Add($dir)
-    foreach ($child in [System.IO.DirectoryInfo]::new($dir).EnumerateFileSystemInfos()) {
+    try { $children = @([System.IO.DirectoryInfo]::new($dir).GetFileSystemInfos()) } catch { $failed++; continue }
+    foreach ($child in $children) {
         $isDir = ($child.Attributes -band $directoryFlag) -ne 0
         if (($child.Attributes -band $reparsePoint) -ne 0) {
             # Remove the link itself, never what it points to.
@@ -50,6 +57,8 @@ while ($pending.Count -gt 0) {
             continue
         }
         if ($isDir) { $pending.Push($child.FullName); continue }
+        # restore.json goes last: while anything is left, the run can be purged again.
+        if ($child.FullName.Equals($restorePath, [System.StringComparison]::OrdinalIgnoreCase)) { continue }
         try {
             $len = [double]$child.Length
             $child.Attributes = [System.IO.FileAttributes]::Normal
@@ -61,7 +70,22 @@ while ($pending.Count -gt 0) {
         }
     }
 }
-for ($i = $dirs.Count - 1; $i -ge 0; $i--) { try { [System.IO.Directory]::Delete($dirs[$i], $false) } catch { } }
+for ($i = $dirs.Count - 1; $i -ge 1; $i--) {
+    try {
+        [System.IO.File]::SetAttributes($dirs[$i], [System.IO.FileAttributes]::Directory)
+        [System.IO.Directory]::Delete($dirs[$i], $false)
+    } catch {
+        $failed++
+    }
+}
+if ($failed -eq 0) {
+    try {
+        [System.IO.File]::Delete($restorePath)
+        [System.IO.Directory]::Delete($runDir, $false)
+    } catch {
+        $failed++
+    }
+}
 
 [pscustomobject]@{
     status       = 'ok'

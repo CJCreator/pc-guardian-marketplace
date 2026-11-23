@@ -158,7 +158,7 @@ export function proposalQuestion(opts: {
     )
   }
   if (binBytes > 0) lines.push(`• Empty the Recycle Bin (${sizeText(binBytes)}). Those files are gone for good.`)
-  if (p.quarantineBytes > 0) {
+  if (p.quarantineRoot !== '') {
     const kinds = [...new Set(items.filter(f => f.action === 'quarantine').map(f => lower(CATEGORY_LABEL[f.category])))]
     const onSystem = p.quarantineRoot.toUpperCase().startsWith(p.systemDrive.toUpperCase())
     lines.push(

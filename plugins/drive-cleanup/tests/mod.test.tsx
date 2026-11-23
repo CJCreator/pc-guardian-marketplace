@@ -61,7 +61,7 @@ const textOf = (r: unknown): string => {
   return typeof result === 'string' ? result : JSON.stringify(r)
 }
 
-test('registers its tools: two that ask the person, none that purges or changes settings', async ($, on) => {
+test('registers its tools: three that ask the person, none that changes settings', async ($, on) => {
   const names: string[] = []
   world(on, new Map(), [], { registered: names })
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
@@ -72,7 +72,7 @@ test('registers its tools: two that ask the person, none that purges or changes 
     'get_storage_summary',
     'get_largest_files',
     'get_findings',
-    'get_windows_recommendations',
+    'get_recommendations',
     'generate_audit_reports',
     'get_dev_caches',
     'get_duplicate_groups',
@@ -81,9 +81,10 @@ test('registers its tools: two that ask the person, none that purges or changes 
     'verify_cleanup',
     'propose_cleanup',
     'restore_quarantine',
+    'empty_quarantine',
     'open_pane',
   ])
-  expect(names.some(n => /delete|remove|purge|move|set_|clean_|enable/.test(n))).toBe(false)
+  expect(names.some(n => /delete|remove|move|set_|clean_|enable/.test(n))).toBe(false)
 })
 
 test('away from Windows, the scan runs nothing and says why', async ($, on) => {
@@ -302,7 +303,7 @@ test('propose_cleanup with no one to answer changes nothing, then stops proposin
   expect(runs.length).toBe(0)
 })
 
-test('restore_quarantine refuses an unknown run; duplicate search stays off without an answer', async ($, on) => {
+test('restore_quarantine and empty_quarantine refuse an unknown run; duplicate search stays off without an answer', async ($, on) => {
   const files: Files = new Map()
   const runs: string[][] = []
   world(on, files, runs)
@@ -318,6 +319,13 @@ test('restore_quarantine refuses an unknown run; duplicate search stays off with
   expect(textOf(await $.tool.call({ tool: 'mcp__drive-cleanup__restore_quarantine', runId: 'x' }))).toContain(
     'Invalid input',
   )
+  const emptied = textOf(
+    await $.tool.call({
+      tool: 'mcp__drive-cleanup__empty_quarantine',
+      runId: '11111111-2222-3333-4444-555555555555',
+    }),
+  )
+  expect(emptied).toContain('cannot be deleted')
   const scanned = textOf(await $.tool.call({ tool: 'mcp__drive-cleanup__run_deep_scan', includeDuplicates: true }))
   expect(scanned).toContain('did not turn on duplicate search')
   expect(settingsText(files).includes('"duplicatesEnabled":true')).toBe(false)

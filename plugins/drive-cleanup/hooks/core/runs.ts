@@ -34,7 +34,10 @@ export function indexEntry(r: RunRecord, ofRunId: string | null = null): RunInde
     purgedBytes: r.purgedBytes,
     done: r.counts.done,
     skipped: r.counts.skipped,
-    quarantineState: r.kind === 'cleanup' && r.quarantinedBytes > 0 ? 'active' : 'none',
+    quarantineState:
+      r.kind === 'cleanup' && (r.quarantinedBytes > 0 || r.items.some(i => i.status === 'quarantined'))
+        ? 'active'
+        : 'none',
     ofRunId,
   }
 }

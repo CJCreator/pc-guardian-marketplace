@@ -63,7 +63,19 @@ export async function verifyCleanup($: EngineInterface): Promise<VerifyOutcome> 
       scanId: scan?.meta.scanId ?? null,
       freeBeforeBytes: scan?.volume?.drives.find(d => d.isSystem)?.freeBytes ?? null,
       freeAfterBytes: freeAfter,
-      reportedFreedBytes: records.reduce((s, r) => s + r.deletedBytes + r.quarantinedBytes + r.purgedBytes, 0),
+      // Quarantine on the system drive frees nothing until purged, and purging
+      // quarantine on another drive frees nothing on it: count each once.
+      reportedFreedBytes: records.reduce(
+        (s, r) =>
+          s +
+          r.deletedBytes +
+          ((r.quarantineRoot ?? '').toUpperCase().startsWith(systemDrive)
+            ? r.purgedBytes
+            : r.kind === 'cleanup'
+              ? r.quarantinedBytes
+              : 0),
+        0,
+      ),
       quarantinedOnSystemDriveBytes: index
         .filter(
           e =>

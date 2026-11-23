@@ -4,6 +4,7 @@
 
 import { CATEGORY_LABEL } from './classify.ts'
 import { sizeText } from './format.ts'
+import { isUnder } from './paths.ts'
 import type { ApprovedItem, ApprovedList, Finding, RawVolume, Settings } from './types.ts'
 
 export const MAX_SCAN_AGE_HOURS = 24
@@ -119,25 +120,33 @@ export function planCleanup(input: PlanInput): Plan {
     })
   }
 
-  // Never every copy of a duplicate group.
-  const groups = new Map<string, { total: number; selected: number }>()
+  // Never every copy of a duplicate group: a copy also goes when a selected
+  // folder holds it (a duplicate folder, a leftover), so count only copies
+  // that stay where they are.
+  const picked = new Set(ids)
+  const selectedFolders = items.filter(i => i.isFolder).map(i => i.path)
+  const groups = new Map<string, { selected: number; staying: number }>()
   for (const f of input.findings) {
     if (f.duplicate === undefined) continue
-    const g = groups.get(f.duplicate.groupId) ?? { total: 0, selected: 0 }
-    g.total++
-    if (ids.includes(f.id)) g.selected++
+    const g = groups.get(f.duplicate.groupId) ?? { selected: 0, staying: 0 }
+    const goes = picked.has(f.id) || selectedFolders.some(p => isUnder(f.path, p))
+    if (picked.has(f.id)) g.selected++
+    if (!goes) g.staying++
     groups.set(f.duplicate.groupId, g)
   }
   for (const g of groups.values()) {
-    if (g.selected > 0 && g.selected >= g.total)
-      return refuse('Every copy of a duplicate group is selected. Keep at least one.')
+    if (g.selected > 0 && g.staying === 0)
+      return refuse(
+        'Every copy of a duplicate group would go (directly or inside a selected folder). Keep at least one.',
+      )
   }
 
   const quarantineBytes = items.filter(i => i.action === 'quarantine').reduce((s, i) => s + i.bytes, 0)
   const deleteBytes =
     items.filter(i => i.action === 'delete').reduce((s, i) => s + i.bytes, 0) + caches.reduce((s, c) => s + c.bytes, 0)
   let quarantineRoot = ''
-  if (quarantineBytes > 0) {
+  // Empty folders weigh 0 bytes but still need a quarantine to move to.
+  if (items.some(i => i.action === 'quarantine')) {
     const fromSystem = items
       .filter(
         i =>
@@ -163,7 +172,7 @@ export function planCleanup(input: PlanInput): Plan {
     ([cat, c]) => `${CATEGORY_LABEL[cat as Finding['category']]}: ${String(c.count)} (${sizeText(c.bytes)})`,
   )
   const lines = [
-    quarantineBytes > 0 ? `Move ${sizeText(quarantineBytes)} to ${quarantineRoot} (restorable).` : '',
+    quarantineRoot === '' ? '' : `Move ${sizeText(quarantineBytes)} to ${quarantineRoot} (restorable).`,
     deleteBytes > 0 ? `Delete ${sizeText(deleteBytes)} of re-creatable data permanently.` : '',
     parts.join('; '),
   ].filter(l => l !== '')
