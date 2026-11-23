@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
-// The whole check, as CI and the pre-push hook run it: every check at once,
-// every failure listed, and a check that runs past its budget fails too.
+// The whole check, as CI and the pre-push hook run it: the quick checks at
+// once, then the heavy ones at once; every failure listed, and a check that
+// runs past its budget fails too.
 //
 //   bun run ci              all checks
 //   bun run ci lint test    only these
@@ -124,7 +125,15 @@ if (picked.length === 0) {
 }
 
 const t0 = performance.now()
-const results = await Promise.all(picked.map(c => run(c)))
+// Two waves. The quick checks (budget of 5 s or less) run first, all at once; the heavy ones, which
+// start the Claude Code binary, run together after them. Started side by side on a 4-core runner,
+// the heavy ones starve the quick ones (lint measured 4.6 s for 95 ms of work), and a budget must
+// measure the check, not its neighbours. The quick wave takes well under a second.
+const isQuick = (c: Check): boolean => c.budgetMs <= 5_000 && c.cmd[0] !== 'claude'
+const quick = await Promise.all(picked.filter(c => isQuick(c)).map(c => run(c)))
+const heavy = await Promise.all(picked.filter(c => !isQuick(c)).map(c => run(c)))
+const byCheck = new Map([...quick, ...heavy].map(r => [r.check, r]))
+const results = picked.map(c => byCheck.get(c)).filter((r): r is Result => r !== undefined)
 const failed = results.filter(r => !r.ok)
 
 for (const r of failed) {
