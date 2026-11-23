@@ -1,6 +1,6 @@
 // Unit tests for M2–M5: developer caches, leftovers, duplicates, approval
 // planning, the action scripts' guards, run records and the final report.
-//   node --experimental-strip-types --test dev/test/*.spec.ts
+//   bun test   (from the repository root)
 
 import assert from 'node:assert/strict'
 import { readFileSync, readdirSync } from 'node:fs'
@@ -136,12 +136,12 @@ const hash = (): RawHash => ({
 
 describe('developer caches (M2)', () => {
   it('the TS table, the scan script and the clean script agree on ids', () => {
-    const scanIds = [...ps('scan/dev-caches.ps1').matchAll(/id = '([a-z_]+)'/g)].map(m => m[1]).sort()
-    assert.deepEqual(scanIds, DEV_CACHES.map(c => c.id).sort())
+    const scanIds = [...ps('scan/dev-caches.ps1').matchAll(/id = '([a-z_]+)'/g)].map(m => m[1]).toSorted()
+    assert.deepEqual(scanIds, DEV_CACHES.map(c => c.id).toSorted())
     const cleanIds = [...ps('actions/clean-cache.ps1').matchAll(/^\s{4}([a-z_]+)\s+= @\{ roots/gm)]
       .map(m => m[1])
-      .sort()
-    assert.deepEqual(cleanIds, [...SAFE_CACHE_IDS].sort(), 'clean-cache.ps1 knows exactly the class A caches')
+      .toSorted()
+    assert.deepEqual(cleanIds, [...SAFE_CACHE_IDS].toSorted(), 'clean-cache.ps1 knows exactly the class A caches')
   })
   it('class A caches can be cleaned, class B are manual, absent ones are not listed', () => {
     const scan = classifyScan({ walk: null, windows: null, devcaches: devcaches() }, ctx())
@@ -336,6 +336,7 @@ describe('approval planning (M4)', () => {
   it('never every copy of a duplicate group', () => {
     const everyCopy = fs
       .filter(f => f.duplicate?.groupId === dupes[0]?.duplicate?.groupId)
+      // oxlint-disable-next-line oxc/no-map-spread -- copies, so the shared fixture findings stay unchanged
       .map(f => ({ ...f, action: 'quarantine' as const }))
     const altered = [...fs.filter(f => !everyCopy.some(c => c.id === f.id)), ...everyCopy]
     assert.match(

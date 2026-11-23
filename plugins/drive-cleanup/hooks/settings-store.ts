@@ -7,6 +7,9 @@ import { readDataFile, writeDataFile } from './safe-writer.ts'
 
 const FILE = 'settings.json'
 
+const int = (v: unknown, min: number, max: number, fallback: number): number =>
+  typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max ? v : fallback
+
 export function parseSettings(text: string | undefined): Settings {
   if (text === undefined) return DEFAULT_SETTINGS
   let raw: unknown
@@ -17,8 +20,6 @@ export function parseSettings(text: string | undefined): Settings {
   }
   if (typeof raw !== 'object' || raw === null) return DEFAULT_SETTINGS
   const r = raw as Record<string, unknown>
-  const int = (v: unknown, min: number, max: number, fallback: number): number =>
-    typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max ? v : fallback
   return {
     cleanupEnabled: r.cleanupEnabled === true,
     duplicatesEnabled: r.duplicatesEnabled === true,

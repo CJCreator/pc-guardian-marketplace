@@ -7,7 +7,7 @@ import { writeDataFileVia, type WriteResult } from './deps.js'
  * core, unit-tested there; this adapts it to the engine's `$`.
  */
 export async function writeDataFile($: EngineInterface, relativePath: string, text: string): Promise<WriteResult> {
-  return writeDataFileVia(
+  return await writeDataFileVia(
     {
       appData: () => $.env.get('APPDATA'),
       exists: path => $.fs.exists(path),

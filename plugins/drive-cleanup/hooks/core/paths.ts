@@ -14,7 +14,7 @@ import type { ClassifyContext } from './types.ts'
  * insensitive for these purposes).
  */
 export function normalizePath(path: string): string {
-  let p = path.replace(/\//g, '\\')
+  let p = path.replaceAll('/', '\\')
   if (p.startsWith('\\\\?\\UNC\\')) p = `\\\\${p.slice(8)}`
   else if (p.startsWith('\\\\?\\') || p.startsWith('\\\\.\\')) p = p.slice(4)
   const isUnc = p.startsWith('\\\\')

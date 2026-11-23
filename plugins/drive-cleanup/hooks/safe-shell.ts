@@ -27,7 +27,7 @@ export async function runScript(
   id: StepId | 'verify',
   params: Readonly<Record<string, string>> = {},
 ): Promise<ScriptRun> {
-  return runAllowlisted($, SCRIPTS[id], params)
+  return await runAllowlisted($, SCRIPTS[id], params)
 }
 
 /**
@@ -40,7 +40,7 @@ export async function runAction(
   id: ActionId,
   params: Readonly<Record<string, string>>,
 ): Promise<ScriptRun> {
-  return runAllowlisted($, ACTIONS[id], params)
+  return await runAllowlisted($, ACTIONS[id], params)
 }
 
 /**

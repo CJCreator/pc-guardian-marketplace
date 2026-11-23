@@ -67,12 +67,12 @@ let activeAudit: AbortController | undefined
  * progress state, which the pane and the browser dashboard both show.
  */
 export function startAudit($: EngineInterface, request: AuditRequest): void {
-  void performAudit($, request).catch(() => undefined)
+  void performAudit($, request).catch(() => {})
 }
 
 /** The same for re-checking one area of the latest scan (a step's Retry). */
 export function startRecheck($: EngineInterface, category: Category): void {
-  void recheckArea($, category).catch(() => undefined)
+  void recheckArea($, category).catch(() => {})
 }
 
 /** Whether a scan or a step's re-check is running now (cleanup waits for it). */
@@ -165,7 +165,7 @@ export async function performAudit(
       now: () => Date.now(),
       onProgress: event => {
         if (!isFull) return
-        void setProgress($, p => applyProgress(p, event, Date.now())).catch(() => undefined)
+        void setProgress($, p => applyProgress(p, event, Date.now())).catch(() => {})
         if (event.type === 'step_started') $.ui.status(`PC Guardian: checking ${event.category}…`)
       },
     })
@@ -225,7 +225,7 @@ export async function performAudit(
     if (isFull) {
       if (activeAudit === controller) activeAudit = undefined
       $.ui.status(undefined)
-      void pushState($).catch(() => undefined)
+      void pushState($).catch(() => {})
     }
   }
 }
@@ -262,7 +262,7 @@ export async function recheckArea($: EngineInterface, category: Category, signal
       id: base.snapshot.id,
       now: () => Date.now(),
       onProgress: event => {
-        void setProgress($, p => applyProgress(p, event, Date.now())).catch(() => undefined)
+        void setProgress($, p => applyProgress(p, event, Date.now())).catch(() => {})
       },
     })
 
@@ -305,7 +305,7 @@ export async function recheckArea($: EngineInterface, category: Category, signal
     signal?.removeEventListener('abort', forwardAbort)
     if (activeAudit === controller) activeAudit = undefined
     $.ui.status(undefined)
-    void pushState($).catch(() => undefined)
+    void pushState($).catch(() => {})
   }
 }
 
@@ -330,7 +330,7 @@ async function finishWithError($: EngineInterface, error: unknown): Promise<void
           },
       Date.now(),
     ),
-  ).catch(() => undefined)
+  ).catch(() => {})
 }
 
 const outcomeOfError = (error: unknown): AuditOutcome =>

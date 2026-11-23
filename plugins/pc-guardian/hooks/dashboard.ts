@@ -39,6 +39,8 @@ export async function openBrowserDashboard($: EngineInterface): Promise<BrowserD
     : { status: 'ok', url }
 }
 
+const noop = (): void => {}
+
 /** Starts the server; undefined once it is ready, else why it is not. */
 async function startServer($: EngineInterface): Promise<BrowserDashboard | undefined> {
   const appData = await $.env.get('APPDATA')
@@ -53,7 +55,7 @@ async function startServer($: EngineInterface): Promise<BrowserDashboard | undef
   })
   if (started.status !== 'ok') return started
 
-  let markReady: (isReady: boolean) => void = () => undefined
+  let markReady: (isReady: boolean) => void = noop
   const ready = new Promise<boolean>(resolve => {
     markReady = resolve
   })
@@ -157,7 +159,7 @@ async function handleRequest($: EngineInterface, request: DashboardRequest): Pro
     case 'cleanup_restore': {
       const { startup } = request
       startCleanupRequest($, () => restoreStartup($, startup, 'dashboard'))
-      return
+      break
     }
   }
 }

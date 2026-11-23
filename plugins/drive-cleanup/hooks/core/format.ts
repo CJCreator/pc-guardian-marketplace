@@ -44,6 +44,7 @@ export function stableId(text: string): string {
   let h1 = 0xdeadbeef
   let h2 = 0x41c6ce57
   for (let i = 0; i < text.length; i++) {
+    // oxlint-disable-next-line unicorn/prefer-code-point -- cyrb53 hashes UTF-16 units; ids are stored, so they must not change
     const ch = text.charCodeAt(i)
     h1 = Math.imul(h1 ^ ch, 2654435761)
     h2 = Math.imul(h2 ^ ch, 1597334677)

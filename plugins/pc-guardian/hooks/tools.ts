@@ -161,7 +161,7 @@ async function report($: EngineInterface, call: Readonly<Record<string, unknown>
       recommendations: scan.recommendations,
       history: index.entries
         .filter(e => e.createdAt < scan.snapshot.createdAt)
-        .reverse()
+        .toReversed()
         .map(e => ({ createdAt: e.createdAt, overall: e.overall })),
       generatedAt: new Date().toISOString(),
       redactPersonalPaths: redact,
@@ -171,7 +171,7 @@ async function report($: EngineInterface, call: Readonly<Record<string, unknown>
   if (generated.status !== 'ok')
     return answer(`PC Guardian: ${generated.detail}`, { status: 'unavailable', format: 'pdf' })
 
-  const stamp = scan.snapshot.createdAt.replace(/[:.]/g, '-')
+  const stamp = scan.snapshot.createdAt.replaceAll(/[:.]/g, '-')
   const file = `reports/pc-guardian-${stamp}-${scan.snapshot.id.slice(0, 8)}.${generated.fileExtension}`
   const written = await writeDataFile($, file, generated.content)
   if (written.status !== 'written')
@@ -294,30 +294,30 @@ export async function answerTool(
 ): Promise<Answer> {
   switch (name) {
     case 'self_check':
-      return selfCheck($)
+      return await selfCheck($)
     case 'run_full_audit':
-      return fullAudit($, call, signal)
+      return await fullAudit($, call, signal)
     case 'get_system_performance':
     case 'get_startup_apps':
     case 'get_storage_analysis':
     case 'get_browser_diagnostics':
     case 'get_security_status':
     case 'get_stability_status':
-      return area($, name, call, signal)
+      return await area($, name, call, signal)
     case 'get_health_score':
-      return healthScore($, call)
+      return await healthScore($, call)
     case 'get_recommendations':
-      return recommendations($, call)
+      return await recommendations($, call)
     case 'generate_report':
-      return report($, call)
+      return await report($, call)
     case 'get_scan_history':
-      return scanHistory($, call)
+      return await scanHistory($, call)
     case 'compare_scans':
-      return compare($, call)
+      return await compare($, call)
     case 'open_dashboard':
-      return openDashboard($, call)
+      return await openDashboard($, call)
     case 'get_cleanup_preview':
-      return cleanupPreviewTool($)
+      return await cleanupPreviewTool($)
   }
 }
 

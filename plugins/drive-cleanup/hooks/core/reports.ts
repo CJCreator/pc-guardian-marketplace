@@ -27,7 +27,7 @@ import type {
 export function csvCell(value: string | number | boolean | null): string {
   let text = value === null ? '' : String(value)
   if (/^[=+\-@\t\r]/.test(text)) text = `'${text}`
-  return `"${text.replace(/"/g, '""')}"`
+  return `"${text.replaceAll('"', '""')}"`
 }
 
 /** CSV with a UTF-8 BOM and CRLF line ends, as Excel expects. */
@@ -35,12 +35,12 @@ export function csv(
   header: readonly string[],
   rows: readonly (readonly (string | number | boolean | null)[])[],
 ): string {
-  const lines = [header, ...rows].map(row => row.map(csvCell).join(','))
+  const lines = [header, ...rows].map(row => row.map(cell => csvCell(cell)).join(','))
   return `\uFEFF${lines.join('\r\n')}\r\n`
 }
 
 /** Text for a Markdown table cell: pipes and line breaks escaped. */
-const md = (text: string): string => text.replace(/\|/g, '\\|').replace(/[\r\n]+/g, ' ')
+const md = (text: string): string => text.replaceAll('|', '\\|').replaceAll(/[\r\n]+/g, ' ')
 
 export type ReportInput = {
   meta: ScanMeta
@@ -82,11 +82,18 @@ function stepLines(meta: ScanMeta): string[] {
 }
 
 function storageAudit({ meta, volume, walk, windows, ctx }: ReportInput): string {
-  const out: string[] = ['# Storage audit', '']
-  out.push(`Scan ${meta.scanId}, ${meta.createdAt}. Read-only: nothing was changed.`, '')
-  out.push('## Steps', '', ...stepLines(meta), '')
-
-  out.push('## Drives', '')
+  const out: string[] = [
+    '# Storage audit',
+    '',
+    `Scan ${meta.scanId}, ${meta.createdAt}. Read-only: nothing was changed.`,
+    '',
+    '## Steps',
+    '',
+    ...stepLines(meta),
+    '',
+    '## Drives',
+    '',
+  ]
   if (volume === null) out.push('Not checked.', '')
   else {
     out.push(
@@ -124,15 +131,15 @@ function storageAudit({ meta, volume, walk, windows, ctx }: ReportInput): string
   }
   out.push('')
   out.push('### Top-level folders', '', '| Folder | Size | Files | Share of used |', '| --- | ---: | ---: | ---: |')
-  const usedBytes = system !== undefined ? system.totalBytes - system.freeBytes : walk.totals.bytes
-  for (const f of walk.folders.filter(f => f.depth === 1).slice(0, 40)) {
+  const usedBytes = system === undefined ? walk.totals.bytes : system.totalBytes - system.freeBytes
+  for (const f of walk.folders.filter(folder => folder.depth === 1).slice(0, 40)) {
     out.push(
       `| ${md(f.path)} | ${sizeText(f.bytes)} | ${f.fileCount.toLocaleString('en-US')} | ${percentText(f.bytes, usedBytes)} |`,
     )
   }
   out.push('')
   out.push('### Largest folders, two and three levels down', '', '| Folder | Size | Files |', '| --- | ---: | ---: |')
-  for (const f of walk.folders.filter(f => f.depth > 1).slice(0, 60)) {
+  for (const f of walk.folders.filter(folder => folder.depth > 1).slice(0, 60)) {
     out.push(`| ${md(f.path)} | ${sizeText(f.bytes)} | ${f.fileCount.toLocaleString('en-US')} |`)
   }
   out.push('')
@@ -257,11 +264,12 @@ const ACTION_TEXT: Record<Finding['action'], string> = {
 }
 
 function cleanupRecommendations({ meta, classified, recommendations }: ReportInput): string {
-  const out: string[] = ['# Cleanup recommendations', '']
-  out.push(
+  const out: string[] = [
+    '# Cleanup recommendations',
+    '',
     `Scan ${meta.scanId}, ${meta.createdAt}. Nothing has been changed. Drive Cleanup acts only on items you approve on its Review page (coming in a later version); until then, these are for you to act on yourself.`,
     '',
-  )
+  ]
   const r = classified.recoverable
   out.push('## Recoverable space', '')
   out.push(`- **A. Safe to clean:** ${sizeText(r.safeBytes)}`)
@@ -310,8 +318,14 @@ function cleanupRecommendations({ meta, classified, recommendations }: ReportInp
 }
 
 function cacheAnalysis({ meta, devcaches, classified }: ReportInput): string {
-  const out: string[] = ['# Cache analysis', '', `Scan ${meta.scanId}, ${meta.createdAt}.`, '']
-  out.push('## Developer tool caches', '')
+  const out: string[] = [
+    '# Cache analysis',
+    '',
+    `Scan ${meta.scanId}, ${meta.createdAt}.`,
+    '',
+    '## Developer tool caches',
+    '',
+  ]
   if (devcaches === null || devcaches === undefined) {
     out.push('Not checked in this scan.', '')
   } else {
@@ -348,7 +362,7 @@ function cacheAnalysis({ meta, devcaches, classified }: ReportInput): string {
 function duplicateFiles({ hash, classified, ctx }: ReportInput): string {
   const rows = classified.findings
     .filter(f => f.duplicate !== undefined)
-    .sort(
+    .toSorted(
       (a, b) =>
         (a.duplicate?.groupId ?? '').localeCompare(b.duplicate?.groupId ?? '') ||
         Number(b.duplicate?.isSuggestedKeeper) - Number(a.duplicate?.isSuggestedKeeper),
@@ -413,8 +427,9 @@ export function finalReport(v: Verification): string {
     '',
     `Verified ${v.at}${v.scanId === null ? '' : `, after scan ${v.scanId}`}. Read-only: verifying changed nothing.`,
     '',
+    '## Space',
+    '',
   ]
-  out.push('## Space', '')
   if (v.freeBeforeBytes !== null && v.freeAfterBytes !== null) {
     out.push(`- Free on the system drive at the scan: ${sizeText(v.freeBeforeBytes)}`)
     out.push(`- Free now: ${sizeText(v.freeAfterBytes)}`)

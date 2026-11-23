@@ -1,4 +1,4 @@
-﻿// PC Guardian's session state: what the dashboard pane draws from.
+// PC Guardian's session state: what the dashboard pane draws from.
 // Mirrors PaneSummary and ScanProgress in packages/core/src/tools/views.ts;
 // the mod's typecheck fails if the two drift apart.
 

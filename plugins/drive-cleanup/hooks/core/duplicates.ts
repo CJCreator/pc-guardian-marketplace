@@ -152,7 +152,7 @@ export function mergeHash(previous: RawHash, next: RawHash): RawHash {
     skippedLocked: previous.skippedLocked + next.skippedLocked,
     skippedCloud: Math.max(previous.skippedCloud, next.skippedCloud),
     groups: [...groups.values()]
-      .sort((a, b) => b.bytes * (b.files.length - 1) - a.bytes * (a.files.length - 1))
+      .toSorted((a, b) => b.bytes * (b.files.length - 1) - a.bytes * (a.files.length - 1))
       .slice(0, 4000),
     folderGroups: [...folders.values()].slice(0, 5000),
   }

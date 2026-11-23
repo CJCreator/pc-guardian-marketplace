@@ -91,8 +91,9 @@ cleanup (or Windows' own), and Drive Cleanup links to it.
 
 ## Development
 
-- Core unit tests: `node --experimental-strip-types --test dev/test/*.spec.ts` (Node 22.6 or later).
+- Core unit tests: `bun test`, from the repository root (random order, each file isolated).
 - Engine tests: `claude plugin test plugins/drive-cleanup`, from the repository root.
+- Everything CI checks: `bun run ci` (see the root README).
 - After changing a script in `ps/`: `node dev/update-hashes.mjs` (or `--check`). A script whose
   fingerprint does not match is never run.
 

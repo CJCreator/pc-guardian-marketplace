@@ -28,15 +28,15 @@ const activityAtom = atom(
 )
 
 export async function readView($: EngineInterface): Promise<DcView> {
-  return read($, viewAtom)
+  return await read($, viewAtom)
 }
 
 export async function readSelection($: EngineInterface): Promise<DcSelection> {
-  return read($, selectionAtom)
+  return await read($, selectionAtom)
 }
 
 export async function readActivity($: EngineInterface): Promise<DcActivity> {
-  return read($, activityAtom)
+  return await read($, activityAtom)
 }
 
 export async function setView($: EngineInterface, change: Partial<DcView>): Promise<void> {

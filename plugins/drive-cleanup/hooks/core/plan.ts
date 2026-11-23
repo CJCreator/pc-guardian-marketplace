@@ -25,6 +25,9 @@ export type Plan =
 
 const refuse = (message: string): Plan => ({ status: 'refused', message })
 
+/** Whether a drive keeps 10% (at least 10 GiB) free after taking `needed` bytes. */
+const fits = (free: number, total: number, needed: number): boolean => free - needed >= Math.max(total * 0.1, 10 * GiB)
+
 /** Where quarantined files go: another fixed NTFS drive with room, else the system drive. */
 export function chooseQuarantineRoot(
   volume: RawVolume | null,
@@ -32,20 +35,18 @@ export function chooseQuarantineRoot(
   bytesFromSystemDrive: number,
 ): { status: 'ok'; root: string; drive: string } | { status: 'refused'; message: string } {
   const drives = (volume?.drives ?? []).filter(d => /^ntfs$/i.test(d.fileSystem) && /^[A-Za-z]:$/.test(d.letter))
-  const fits = (free: number, total: number, needed: number): boolean =>
-    free - needed >= Math.max(total * 0.1, 10 * GiB)
   let candidates = drives
-  if (setting !== 'auto') {
+  if (setting === 'auto') {
+    const others = drives.filter(d => !d.isSystem).toSorted((a, b) => b.freeBytes - a.freeBytes)
+    const system = drives.filter(d => d.isSystem)
+    candidates = [...others, ...system]
+  } else {
     candidates = drives.filter(d => d.letter.toUpperCase() === setting.toUpperCase())
     if (candidates.length === 0)
       return {
         status: 'refused',
         message: `The quarantine drive ${setting} was not found as a fixed NTFS drive. Choose another in Settings.`,
       }
-  } else {
-    const others = drives.filter(d => !d.isSystem).sort((a, b) => b.freeBytes - a.freeBytes)
-    const system = drives.filter(d => d.isSystem)
-    candidates = [...others, ...system]
   }
   for (const d of candidates) {
     // A move within the system drive is a rename and needs no space of its own.

@@ -19,7 +19,7 @@ export type VerifyOutcome =
 
 let running = false
 
-const stamp = (iso: string): string => iso.replace(/[-:]/g, '').replace('T', '_').slice(0, 15)
+const stamp = (iso: string): string => iso.replaceAll(/[-:]/g, '').replace('T', '_').slice(0, 15)
 
 export async function verifyCleanup($: EngineInterface): Promise<VerifyOutcome> {
   if (running || isCleanupBusy())

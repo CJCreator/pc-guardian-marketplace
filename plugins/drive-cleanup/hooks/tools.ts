@@ -223,7 +223,7 @@ function summaryText(scan: LoadedScan): string {
   )
   const top = scan.classified.totals
     .filter(t => t.class !== 'protected')
-    .sort((a, b) => b.bytes - a.bytes)
+    .toSorted((a, b) => b.bytes - a.bytes)
     .slice(0, 6)
   if (top.length > 0) {
     lines.push('Largest categories:')
@@ -325,6 +325,7 @@ async function findings($: EngineInterface, call: Readonly<Record<string, unknow
   const bytes = all.reduce((s, f) => s + f.bytes, 0)
   return answer(
     `${String(all.length)} findings match (${sizeText(bytes)}); showing ${String(page.length)} from ${String(offset + 1)}. ${READ_ONLY_NOTE}`,
+    // oxlint-disable-next-line oxc/no-map-spread -- a page of findings; mutating would change the stored scan
     page.map(f => ({ ...f, size: sizeText(f.bytes), classLabel: CLASS_LABEL[f.class] })),
   )
 }
@@ -342,7 +343,7 @@ async function recommendations($: EngineInterface): Promise<Answer> {
 }
 
 function stamp(iso: string): string {
-  return iso.replace(/[-:]/g, '').replace('T', '_').slice(0, 15)
+  return iso.replaceAll(/[-:]/g, '').replace('T', '_').slice(0, 15)
 }
 
 async function reports($: EngineInterface): Promise<Answer> {
@@ -428,7 +429,7 @@ async function duplicateGroups($: EngineInterface, call: Readonly<Record<string,
     list.push(f)
     groups.set(f.duplicate.groupId, list)
   }
-  const all = [...groups.values()].sort(
+  const all = [...groups.values()].toSorted(
     (a, b) => (b[0]?.bytes ?? 0) * (b.length - 1) - (a[0]?.bytes ?? 0) * (a.length - 1),
   )
   const wasted = all.reduce((s, g) => s + (g[0]?.bytes ?? 0) * (g.length - 1), 0)
@@ -458,6 +459,7 @@ async function quarantine($: EngineInterface): Promise<Answer> {
     `${String(index.length)} runs recorded; ${String(active.length)} quarantine runs hold ${sizeText(held)}. Restore or delete them for good in the Drive Cleanup pane (Quarantine).`,
     index
       .slice(0, 50)
+      // oxlint-disable-next-line oxc/no-map-spread -- 50 rows at most; mutating would change the stored run index
       .map(e => ({ ...e, quarantined: sizeText(e.quarantinedBytes), deleted: sizeText(e.deletedBytes) })),
   )
 }
@@ -480,7 +482,9 @@ async function verify($: EngineInterface): Promise<Answer> {
       ? `Free space: ${sizeText(v.freeBeforeBytes)} at the scan, ${sizeText(v.freeAfterBytes)} now.`
       : 'Free space: not checked.',
   ]
-  if (v.verify !== null) {
+  if (v.verify === null) {
+    lines.push(`Checks not run: ${v.verifyDetail ?? ''}`)
+  } else {
     const missingTools = v.verify.tools.filter(t => t.status !== 'ok').map(t => t.id)
     const badProjects = v.verify.projects.filter(p => !p.exists).length
     const bad = v.verify.quarantine.reduce((s, q) => s + q.missing + q.mismatched, 0)
@@ -488,8 +492,6 @@ async function verify($: EngineInterface): Promise<Answer> {
       `Tools not found on PATH: ${missingTools.length === 0 ? 'none' : missingTools.join(', ')} (absent before too is not a problem).`,
     )
     lines.push(`Projects missing: ${String(badProjects)}. Quarantine problems: ${String(bad)}.`)
-  } else {
-    lines.push(`Checks not run: ${v.verifyDetail ?? ''}`)
   }
   return answer(lines.join('\n'), v)
 }

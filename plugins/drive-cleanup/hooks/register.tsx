@@ -231,7 +231,7 @@ export const register: Register = on => {
                       key={`retry-${s.id}`}
                       label={s.id === 'hash' && s.state === 'ok' ? 'Continue duplicate search' : `Retry ${s.label}`}
                       onPress={() => {
-                        void startScan($, s.id).catch(() => undefined)
+                        void startScan($, s.id).catch(() => {})
                       }}
                     />
                   ))}
@@ -252,7 +252,7 @@ export const register: Register = on => {
                 label="Run deep scan"
                 variant="primary"
                 onPress={() => {
-                  void startScan($).catch(() => undefined)
+                  void startScan($).catch(() => {})
                 }}
               />
             )}

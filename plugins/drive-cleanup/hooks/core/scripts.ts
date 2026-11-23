@@ -98,7 +98,7 @@ const BYTE_ORDER_MARK = '﻿'
 
 /** The text a script's hash is taken over: no BOM, LF line ends. */
 export function normalizeScriptText(text: string): string {
-  return (text.startsWith(BYTE_ORDER_MARK) ? text.slice(1) : text).replace(/\r\n/g, '\n')
+  return (text.startsWith(BYTE_ORDER_MARK) ? text.slice(1) : text).replaceAll('\r\n', '\n')
 }
 
 export async function sha256Hex(text: string): Promise<string> {

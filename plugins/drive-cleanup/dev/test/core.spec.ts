@@ -1,5 +1,5 @@
-// Unit tests for Drive Cleanup's core (pure logic). Run from the plugin folder:
-//   node --experimental-strip-types --test dev/test/*.spec.ts
+// Unit tests for Drive Cleanup's core (pure logic). Run from the repository root:
+//   bun test
 
 import assert from 'node:assert/strict'
 import { readFileSync, readdirSync } from 'node:fs'
@@ -9,7 +9,7 @@ import { classifyCandidate, classifyScan } from '../../hooks/core/classify.ts'
 import { isUnder, normalizePath, protectedBy } from '../../hooks/core/paths.ts'
 import { windowsRecommendations } from '../../hooks/core/recommend.ts'
 import { buildReports, csv, csvCell } from '../../hooks/core/reports.ts'
-import { parseOutput, RawVolumeCheck, RawWalkCheck, RawWindowsCheck } from '../../hooks/core/validate.ts'
+import { type Check, parseOutput, RawVolumeCheck, RawWalkCheck, RawWindowsCheck } from '../../hooks/core/validate.ts'
 import { candidate, ctx, NOW, PROFILE, volume, walk, windows } from './fixtures.ts'
 
 const PLUGIN = join(import.meta.dirname, '..', '..')
@@ -185,7 +185,8 @@ describe('classification (PLAN.md §5)', () => {
     const scan = classifyScan({ walk: walk(cands), windows: null }, c)
     const inst = scan.totals.find(t => t.category === 'installer' && t.class === 'review')
     assert.deepEqual([inst?.count, inst?.bytes, inst?.isCapped], [2, 300, true])
-    assert.equal(scan.findings[0]?.category, 'user_temp') // largest first
+    // Largest first.
+    assert.equal(scan.findings[0]?.category, 'user_temp')
   })
   it('a duplicate candidate path is listed once', () => {
     const a = candidate({ kind: 'installer', path: `${PROFILE}\\Downloads\\a.exe` })
@@ -196,11 +197,12 @@ describe('classification (PLAN.md §5)', () => {
 
 describe('validation of script output', () => {
   it('accepts what the scripts print', () => {
-    for (const [check, data] of [
+    const cases: [Check<unknown>, unknown][] = [
       [RawVolumeCheck, volume()],
       [RawWalkCheck, walk([candidate({ kind: 'installer', path: 'C:\\x.exe' })])],
       [RawWindowsCheck, windows()],
-    ] as const) {
+    ]
+    for (const [check, data] of cases) {
       const parsed = parseOutput(check, `\uFEFF${JSON.stringify(data)}\r\n`, 'x.ps1')
       assert.equal(parsed.status, 'ok', JSON.stringify(parsed))
     }
@@ -275,11 +277,11 @@ describe('reports', () => {
 
 describe('Windows recommendations (PLAN.md §8)', () => {
   it('suggests Storage Sense, Update cleanup and the hibernation file', () => {
-    const ids = windowsRecommendations(volume(), windows()).map(r => r.id)
-    assert.ok(ids.includes('storage_sense_off'))
-    assert.ok(ids.includes('windows_update_cache'))
-    assert.ok(ids.includes('hibernation_file'))
-    assert.ok(!ids.includes('low_free_space'))
+    const ids = new Set(windowsRecommendations(volume(), windows()).map(r => r.id))
+    assert.ok(ids.has('storage_sense_off'))
+    assert.ok(ids.has('windows_update_cache'))
+    assert.ok(ids.has('hibernation_file'))
+    assert.ok(!ids.has('low_free_space'))
   })
   it('flags low free space', () => {
     const v = volume()

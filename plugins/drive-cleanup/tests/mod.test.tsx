@@ -11,13 +11,14 @@ type Files = Map<string, string>
 
 type World = { scriptText?: string; registered?: string[] }
 
+const windowsSpelling = (path: string): string => path.replace(/^.*?(?=[A-Za-z]:\\)/, '')
+
 /**
  * An in-memory file system, and a record of processes started. The kit hands
  * hooks paths resolved against its own working directory, so a Windows path
  * arrives prefixed; `realPath` answers it as Windows would spell it.
  */
 function world(on: On, files: Files, runs: string[][], opts: World = {}): void {
-  const windowsSpelling = (path: string): string => path.replace(/^.*?(?=[A-Za-z]:\\)/, '')
   on('fs.exists', (_, e) => ({ value: files.has(e.path) || [...files.keys()].some(k => k.startsWith(`${e.path}\\`)) }))
   on('fs.stat', (_, e) => ({
     value: {

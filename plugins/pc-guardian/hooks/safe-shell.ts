@@ -41,7 +41,7 @@ const notChecked = (reason: 'failed' | 'timeout' | 'unsupported_platform', detai
  * reaches the command line.
  */
 export async function runScript($: EngineInterface, id: ScriptId, options: RunScriptOptions = {}): Promise<ScriptRun> {
-  return runAllowlisted($, SCRIPTS[id], options)
+  return await runAllowlisted($, SCRIPTS[id], options)
 }
 
 /**
@@ -52,7 +52,7 @@ export async function runScript($: EngineInterface, id: ScriptId, options: RunSc
  * ticked and confirmed.
  */
 export async function runAction($: EngineInterface, id: ActionId, params: ScriptParams): Promise<ScriptRun> {
-  return runAllowlisted($, ACTIONS[id], { params })
+  return await runAllowlisted($, ACTIONS[id], { params })
 }
 
 async function runAllowlisted($: EngineInterface, spec: ScriptSpec, options: RunScriptOptions): Promise<ScriptRun> {

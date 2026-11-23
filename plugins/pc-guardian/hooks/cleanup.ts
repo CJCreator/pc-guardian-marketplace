@@ -79,16 +79,16 @@ export async function previewCleanup($: EngineInterface): Promise<PreviewOutcome
     const ran = await runScript($, 'cleanupPreview')
     const raw =
       ran.status === 'ok' ? parseScriptOutput(RawCleanupPreviewSchema, ran.stdout, 'cleanup-preview.ps1') : ran
-    if (raw.status !== 'ok') {
-      outcome = {
-        status: 'error',
-        message: `What cleanup could free was not measured: ${raw.detail}`,
-      }
-    } else {
+    if (raw.status === 'ok') {
       const startup = await createRealCollectors().startup.collect({
         run: (id, params) => runScript($, id, { params }),
       })
       outcome = { status: 'ok', preview: toCleanupPreview(raw.data, startup, meta) }
+    } else {
+      outcome = {
+        status: 'error',
+        message: `What cleanup could free was not measured: ${raw.detail}`,
+      }
     }
   } catch {
     outcome = { status: 'error', message: 'What cleanup could free was not measured.' }
@@ -305,13 +305,13 @@ export function startCleanupRequest(
   $: EngineInterface,
   work: () => Promise<{ status: string; message?: string }>,
 ): void {
-  void work()
-    .then(async outcome => {
-      if (outcome.status !== 'ok' && outcome.message !== undefined) {
-        await pushNotice($, { level: 'warning', message: outcome.message })
-      }
-    })
-    .catch(() => undefined)
+  const run = async (): Promise<void> => {
+    const outcome = await work()
+    if (outcome.status !== 'ok' && outcome.message !== undefined) {
+      await pushNotice($, { level: 'warning', message: outcome.message })
+    }
+  }
+  void run().catch(() => {})
 }
 
 /**
@@ -375,5 +375,5 @@ export async function cleanupFromPane($: EngineInterface): Promise<void> {
 
 /** The pane's button: starts the flow and returns at once (a press hook's budget). */
 export function startCleanupFromPane($: EngineInterface): void {
-  void cleanupFromPane($).catch(() => undefined)
+  void cleanupFromPane($).catch(() => {})
 }

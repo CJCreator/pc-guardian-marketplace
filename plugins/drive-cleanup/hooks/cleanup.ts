@@ -56,7 +56,7 @@ async function saveRun(
   if (manifest.length > MANIFEST_LIMIT) {
     await writeDataFile(
       $,
-      `manifest/deletion_manifest-${record.startedAt.replace(/[-:.]/g, '').slice(0, 15)}.csv`,
+      `manifest/deletion_manifest-${record.startedAt.replaceAll(/[-:.]/g, '').slice(0, 15)}.csv`,
       manifest,
     )
     manifest = emptyManifest()
@@ -359,5 +359,5 @@ function fmtBytes(bytes: number): string {
 
 /** Starts a pane action and returns at once (a press hook's budget). */
 export function start(work: () => Promise<void>): void {
-  void work().catch(() => undefined)
+  void work().catch(() => {})
 }

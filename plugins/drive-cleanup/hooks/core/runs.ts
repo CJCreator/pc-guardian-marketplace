@@ -104,7 +104,7 @@ export function manifestRows(r: RunRecord): string {
         i.destination,
         i.detail,
       ]
-        .map(csvCell)
+        .map(cell => csvCell(cell))
         .join(','),
     )
     .map(line => `${line}\r\n`)
